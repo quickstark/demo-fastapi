@@ -65,9 +65,9 @@ async def get_image_postgres(id: int):
         print(f"Fetched Image Postgres: {image[1]}")
         item = ImageModel(id=image[0], name=image[1], width=image[2], height=image[3], url=image[4],
                           url_resize=image[5], date_added=image[6], date_identified=image[7], ai_labels=image[8], ai_text=image[9])
-        return item.dict()
+        return item.model_dump()
     except Exception as err:
-        capture_exception(err)
+        print(err)
 
 
 async def get_all_images_postgres(response_model=List[ImageModel]):
@@ -79,9 +79,6 @@ async def get_all_images_postgres(response_model=List[ImageModel]):
     Returns:
         list: The list of images from Postgres
     """
-    with configure_scope() as scope:
-        scope.set_transaction_name("Postgres Get All Images")
-
     try:
         cur = conn.cursor()
         cur.execute("SELECT * FROM images ORDER BY id DESC")
@@ -95,7 +92,7 @@ async def get_all_images_postgres(response_model=List[ImageModel]):
                 )
             )
     except Exception as err:
-        capture_exception(err)
+        print(err)
     finally:
         cur.close()
     return formatted_photos
@@ -110,8 +107,6 @@ async def add_image_postgres(name: str, url: str, ai_labels: list, ai_text: list
         ai_labels (list): Any labels identified by Amazon Rekognition
         ai_text (list): Any text identified by Amazon Rekognition
     """
-    with configure_scope() as scope:
-        scope.set_transaction_name("Postgres Add Image")
 
     cur = conn.cursor()
     # Note: don't be tempted to use string interpolation on the SQL string ...
@@ -125,7 +120,7 @@ async def add_image_postgres(name: str, url: str, ai_labels: list, ai_text: list
         conn.commit()
     except Exception as err:
         conn.rollback()
-        capture_exception(err)
+        print(err)
 
     # Close the connection
     cur.close()
@@ -141,16 +136,13 @@ async def delete_image_postgres(id: int):
     SQL = "DELETE FROM images WHERE id = %s"
     DATA = (id,)
 
-    with configure_scope() as scope:
-        scope.set_transaction_name("Postgres Delete Image")
-
     # Attempt to delete the image from Postgres
     try:
         cur.execute(SQL, DATA)
         conn.commit()
     except Exception as err:
         conn.rollback()
-        capture_exception(err)
+        print(err)
 
     # Close the connection
     cur.close()

@@ -85,8 +85,6 @@ async def get_one_mongo(id: str):
 @router_mongo.get("/get-all-images-mongo")
 async def get_all_images_mongo():
     # Get all documents from the collection
-    with configure_scope() as scope:
-        scope.set_transaction_name("Mongo Get All Images")
     documents = collection.find({})
     dict_cursor = [doc for doc in documents]
     for d in dict_cursor:
@@ -100,8 +98,6 @@ async def get_all_images_mongo():
 
 async def add_image_mongo(name: str, url: str, ai_labels: list, ai_text: list):
     # Add a image data to the collection
-    with configure_scope() as scope:
-        scope.set_transaction_name("Mongo Add Image")
     document = {"name": name, "url": url,
                 "ai_labels": ai_labels, "ai_text": ai_text}
     result = collection.insert_one(document)
@@ -119,8 +115,6 @@ async def delete_all_mongo(key: str):
 @router_mongo.delete(path="/delete-one-mongo/{id}")
 async def delete_one_mongo(id: str):
     # Delete one document from the collection
-    with configure_scope() as scope:
-        scope.set_transaction_name("Mongo Delete Image")
 
     result = collection.delete_one({"_id": ObjectId(id)})
     return {"message": f"Mongo deleted {result.deleted_count} documents"}

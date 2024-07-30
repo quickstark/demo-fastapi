@@ -57,7 +57,7 @@ async def add_photo(file: UploadFile, backend: str = "mongo"):
         if s3_url is None:
             raise CustomError("Error uploading image to Amazon S3")
     except CustomError as err:
-        capture_exception(err)
+        print(err)
 
     # Attempt to detect labels and text in the image using Amazon Rekognition
     try:
@@ -66,7 +66,7 @@ async def add_photo(file: UploadFile, backend: str = "mongo"):
         if not amzlabels and not amztext and not amzmoderation:
             raise CustomError("Error processing Amazon Rekognition")
     except CustomError as err:
-        capture_exception(err)
+        print(err)
 
     # Check the image for questionable content using Amazon Rekognition
     try:
@@ -74,7 +74,7 @@ async def add_photo(file: UploadFile, backend: str = "mongo"):
             return {"message": f"{file.filename} may contain questionable content. Let's keep it family friendly. ;-)"}
             raise CustomError("We detected inappropriate content")
     except CustomError as err:
-        capture_exception(err)
+        print(err)
 
     # Check if the image contained the word "error" and issue an error
     try:
@@ -82,7 +82,7 @@ async def add_photo(file: UploadFile, backend: str = "mongo"):
             error_message = f"Image Text Error - {' '.join(amztext)}"
             raise CustomError(error_message)
     except CustomError as err:
-        capture_exception(err)
+        print(err)
 
     # Check if the image labels contained the word "bug" or "insect" and issue an error
     try:
@@ -90,7 +90,7 @@ async def add_photo(file: UploadFile, backend: str = "mongo"):
             error_message = f"Image Label Error - {' '.join(amzlabels)}"
             raise CustomError(error_message)
     except CustomError as err:
-        capture_exception(err)
+        print(err)
 
     if backend == "mongo":
         # Attempt to upload the image to MongoDB
@@ -98,13 +98,13 @@ async def add_photo(file: UploadFile, backend: str = "mongo"):
         try:
             await add_image_mongo(file.filename, s3_url, amzlabels, amztext)
         except CustomError as err:
-            capture_exception(err)
+            print(err)
     elif backend == "postgres":
         # Attempt to upload the image to Postgres
         try:
             await add_image_postgres(file.filename, s3_url, amzlabels, amztext)
         except CustomError as err:
-            capture_exception(err)
+            print(err)
     else:
         raise CustomError("Backend not supported")
 
@@ -119,14 +119,14 @@ async def delete_image(id, backend: str = "mongo"):
             image = await get_one_mongo(id)
             res = await delete_one_mongo(id)
         except CustomError as err:
-            capture_exception(err)
+            print(err)
     elif backend == "postgres":
         # Attempt to delete the image from Postgres
         try:
             image = await get_image_postgres(id)
             res = await delete_image_postgres(id)
         except CustomError as err:
-            capture_exception(err)
+            print(err)
     else:
         raise CustomError("Backend not supported")
 
@@ -136,7 +136,7 @@ async def delete_image(id, backend: str = "mongo"):
         res = await amazon_delete_one_s3(image["name"])
         print(res)
     except CustomError as err:
-        capture_exception(err)
+        print(err)
 
 
 @app.get("/")

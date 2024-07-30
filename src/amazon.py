@@ -61,7 +61,7 @@ def amazon_upload(file: UploadFile = File(...)) -> str:
         else:
             return "Nothing was uploaded"
     except Exception as err:
-        capture_exception(err)
+        print(err)
 
 
 @router_amazon.delete(path="/delete-one-s3/{key}")
@@ -85,7 +85,7 @@ async def amazon_delete_one_s3(key: str) -> bool:
         else:
             return False
     except Exception as err:
-        capture_exception(err)
+        print(err)
 
 @router_amazon.delete(path="/delete-all-s3")
 async def amazon_delete_all_s3() -> bool:
@@ -110,7 +110,7 @@ async def amazon_delete_all_s3() -> bool:
             print("Object deletion failed")
             return False
     except Exception as err:
-        capture_exception(err)
+        print(err)
 
 
 def amazon_detection(file):
