@@ -1,11 +1,28 @@
 from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from datadog import initialize, api
 
 from src.amazon import *
 from src.mongo import *
 from src.openai import *
 from src.postgres import *
+
+# Load dotenv in the base root refers to application_top
+APP_ROOT = os.path.join(os.path.dirname(__file__))
+dotenv_path = os.path.join(APP_ROOT, '.env')
+load_dotenv(dotenv_path)
+
+DATADOG_API_KEY = os.getenv('DATADOG_API_KEY')
+DATADOG_APP_KEY = os.getenv('DATADOG_APP_KEY')
+
+#Setup Datadog
+options = {
+    "api_key": DATADOG_API_KEY,
+    "app_key": DATADOG_APP_KEY,
+}
+
+initialize(**options)
 
 # Setup CORS
 origins = [
