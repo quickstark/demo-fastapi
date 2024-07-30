@@ -1,2 +1,9 @@
+boto3==1.25.4
+botocore==1.28.5
 fastapi==0.100.0
 hypercorn==0.14.4
+openai==0.25.0
+pymongo==4.8.0
+python-dotenv
+psycopg[binary]
+python-multipart
