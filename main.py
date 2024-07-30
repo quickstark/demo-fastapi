@@ -26,9 +26,9 @@ initialize(**options)
 
 # Setup CORS
 origins = [
-    "http://localhost",
-    "http://localhost:5173",
-    "https://quickstark-vite-images.up.railway.app",
+    "localhost",
+    "localhost:5173",
+    "quickstark-vite-images.up.railway.app",
 ]
 
 # Instantiate the FastAPI app
