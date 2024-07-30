@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from datadog import initialize, api
+import os
 
 from src.amazon import *
 from src.mongo import *
@@ -16,25 +17,29 @@ load_dotenv(dotenv_path)
 DATADOG_API_KEY = os.getenv('DATADOG_API_KEY')
 DATADOG_APP_KEY = os.getenv('DATADOG_APP_KEY')
 
-#Setup Datadog
+# Setup Datadog
 options = {
     "api_key": DATADOG_API_KEY,
     "app_key": DATADOG_APP_KEY,
 }
-
 initialize(**options)
 
 # Setup CORS
 origins = [
     "http://localhost",
     "http://localhost:5173",
-    "https://quickstark-vite-images.up.railway.app/",
+    "https://quickstark-vite-images.up.railway.app",
 ]
 
 # Instantiate the FastAPI app
 app = FastAPI(debug=True)
-app.add_middleware(CORSMiddleware, allow_origins=["*"],
-                   allow_credentials=False, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins, 
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
 
 # Include the routers
 app.include_router(router_openai)
