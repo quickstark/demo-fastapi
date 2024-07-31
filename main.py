@@ -2,7 +2,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from datadog import initialize, api
-from ddtrace import patch_all, tracer
+from ddtrace import patch_all
 import os
 
 from src.amazon import *
@@ -18,9 +18,8 @@ load_dotenv(dotenv_path)
 DATADOG_API_KEY = os.getenv('DATADOG_API_KEY')
 DATADOG_APP_KEY = os.getenv('DATADOG_APP_KEY')
 
-# Setup Datadog
-patch_all()
-
+# Initialize Datadog
+patch_all(openai=False)
 options = {
     "api_key": DATADOG_API_KEY,
     "app_key": DATADOG_APP_KEY,
@@ -58,7 +57,6 @@ class CustomError(Exception):
     def __init__(self, message):
         self.message = message
 
-@tracer.wrap()
 @app.get("/images")
 async def get_all_images(backend: str = "mongo"):
     print(f"Getting all images from {backend}")
@@ -70,7 +68,6 @@ async def get_all_images(backend: str = "mongo"):
         raise CustomError("Invalid backend specified")
     return images
 
-@tracer.wrap()
 @app.post("/add_image", status_code=201)
 async def add_photo(file: UploadFile, backend: str = "mongo"):
     print(f"Uploading File ${file.filename} - ${file.content_type}")
@@ -133,7 +130,6 @@ async def add_photo(file: UploadFile, backend: str = "mongo"):
     else:
         raise CustomError("Backend not supported")
 
-@tracer.wrap()
 @app.delete("/delete_image/{id}", status_code=201)
 async def delete_image(id, backend: str = "mongo"):
     print(f"Attempt to Delete File {id} from {backend}")
