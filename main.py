@@ -17,8 +17,10 @@ load_dotenv(dotenv_path)
 
 DATADOG_API_KEY = os.getenv('DATADOG_API_KEY')
 DATADOG_APP_KEY = os.getenv('DATADOG_APP_KEY')
+DD_AGENT_HOST = os.getenv('DD_AGENT_HOST')
+DD_AGENT_PORT = os.getenv('DD_AGENT_PORT')
 
-# Initialize Datadog
+# Initialize Datadoggit a
 patch_all(openai=False)
 options = {
     "api_key": DATADOG_API_KEY,
