@@ -20,7 +20,7 @@ DATADOG_APP_KEY = os.getenv('DATADOG_APP_KEY')
 DD_AGENT_HOST = os.getenv('DD_AGENT_HOST')
 DD_AGENT_PORT = os.getenv('DD_AGENT_PORT')
 
-# Initialize Datadoggit a
+# Initialize Datadog Agent
 patch_all(openai=False)
 options = {
     "api_key": DATADOG_API_KEY,
