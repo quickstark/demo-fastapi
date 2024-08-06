@@ -2,8 +2,10 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from datadog import initialize, api
-from ddtrace import patch_all
+from ddtrace import patch_all, tracer
+from ddtrace.constants import ERROR_MSG, ERROR_TYPE, ERROR_STACK
 import os
+import traceback
 
 from src.amazon import *
 from src.mongo import *
@@ -53,10 +55,19 @@ app.include_router(router_postgres)
 # Define Python user-defined exceptions
 
 class CustomError(Exception):
-    """Base class for custom  exceptions"""
-
+    """Base class for custom exceptions"""
     def __init__(self, message):
         self.message = message
+        super().__init__(message)
+        
+    def report_to_datadog(self):
+        span = tracer.current_span()
+        if span is not None:
+            # Tagging the current span with error information
+            span.set_tag(ERROR_MSG, self.message)
+            span.set_tag(ERROR_TYPE, type(self).__name__)
+            span.set_tag(ERROR_STACK, traceback.format_exc())
+            span.error = 1
 
 @app.get("/images")
 async def get_all_images(backend: str = "mongo"):
@@ -108,15 +119,15 @@ async def add_photo(file: UploadFile, backend: str = "mongo"):
         print(err)
 
     # Check if the image labels contained the word "bug" or "insect" and issue an error
-    try:
-        if amazon_error_label(amzlabels):
-            error_message = f"Image Label Error - {' '.join(amzlabels)}"
-            raise CustomError(error_message)
-    except CustomError as e:
-        # Log the exception or do any other necessary actions
-        print(f"Handled error: {e.message}")
-        # Re-raise the exception to be caught by Datadog
-        raise
+        with tracer.trace("custom.error.example"):
+            try:
+                if amazon_error_label(amzlabels):
+                    error_message = f"Image Label Error - {' '.join(amzlabels)}"
+                    raise CustomError(error_message)
+            except CustomError as e:
+                    # Handle the exception and report to Datadog
+                    e.report_to_datadog()
+                    return {"error": e.message}
 
     if backend == "mongo":
         # Attempt to upload the image to MongoDB
