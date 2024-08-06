@@ -112,8 +112,11 @@ async def add_photo(file: UploadFile, backend: str = "mongo"):
         if amazon_error_label(amzlabels):
             error_message = f"Image Label Error - {' '.join(amzlabels)}"
             raise CustomError(error_message)
-    except CustomError as err:
-        print(err)
+    except CustomError as e:
+        # Log the exception or do any other necessary actions
+        print(f"Handled error: {e.message}")
+        # Re-raise the exception to be caught by Datadog
+        raise
 
     if backend == "mongo":
         # Attempt to upload the image to MongoDB
