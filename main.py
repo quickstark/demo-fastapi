@@ -111,23 +111,26 @@ async def add_photo(file: UploadFile, backend: str = "mongo"):
         print(err)
 
     # Check if the image contained the word "error" and issue an error
-    try:
-        if amazon_error_text(amztext):
-            error_message = f"Image Text Error - {' '.join(amztext)}"
-            raise CustomError(error_message)
-    except CustomError as err:
-        print(err)
+    with tracer.trace("custom.error.example"):
+        try:
+            if amazon_error_text(amztext):
+                error_message = f"Image Text Error - {' '.join(amztext)}"
+                raise CustomError(error_message)
+        except CustomError as e:
+                # Handle the exception and report to Datadog
+                e.report_to_datadog()
+                return {"error": e.message}
 
     # Check if the image labels contained the word "bug" or "insect" and issue an error
-        with tracer.trace("custom.error.example"):
-            try:
-                if amazon_error_label(amzlabels):
-                    error_message = f"Image Label Error - {' '.join(amzlabels)}"
-                    raise CustomError(error_message)
-            except CustomError as e:
-                    # Handle the exception and report to Datadog
-                    e.report_to_datadog()
-                    return {"error": e.message}
+    with tracer.trace("custom.error.bug"):
+        try:
+            if amazon_error_label(amzlabels):
+                error_message = f"Image Label Error - {' '.join(amzlabels)}"
+                raise CustomError(error_message)
+        except CustomError as e:
+                # Handle the exception and report to Datadog
+                e.report_to_datadog()
+                return {"error": e.message}
 
     if backend == "mongo":
         # Attempt to upload the image to MongoDB
