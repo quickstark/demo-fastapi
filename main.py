@@ -119,7 +119,6 @@ async def add_photo(file: UploadFile, backend: str = "mongo"):
         except CustomError as e:
             # Handle the exception and report to Datadog
             e.report_to_datadog()
-            return {"error": e.message}
 
     # Check if the image labels contained the word "bug" or "insect" and issue an error
     with tracer.trace("custom.error.bug"):
@@ -130,7 +129,6 @@ async def add_photo(file: UploadFile, backend: str = "mongo"):
         except CustomError as e:
             # Handle the exception and report to Datadog
             e.report_to_datadog()
-            return {"error": e.message}
 
     if backend == "mongo":
         # Attempt to upload the image to MongoDB
