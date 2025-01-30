@@ -4,31 +4,26 @@ from fastapi.middleware.cors import CORSMiddleware
 from datadog import initialize, api
 from ddtrace import patch_all, tracer
 from ddtrace.constants import ERROR_MSG, ERROR_TYPE, ERROR_STACK
+from ddtrace.profiling import Profiler
+from ddtrace.debugging import DynamicInstrumentation
+from ddtrace.runtime import RuntimeMetrics
 import os
 import traceback
+import httpx
+from pydantic import BaseModel
 
 from src.amazon import *
 from src.mongo import *
 from src.openai import *
 from src.postgres import *
 
+RuntimeMetrics.enable()
+
 # Load dotenv in the base root refers to application_top
 APP_ROOT = os.path.join(os.path.dirname(__file__))
 dotenv_path = os.path.join(APP_ROOT, '.env')
 load_dotenv(dotenv_path)
 
-DATADOG_API_KEY = os.getenv('DATADOG_API_KEY')
-DATADOG_APP_KEY = os.getenv('DATADOG_APP_KEY')
-DD_AGENT_HOST = os.getenv('DD_AGENT_HOST')
-DD_AGENT_PORT = os.getenv('DD_AGENT_PORT')
-
-# Initialize Datadog Agent
-patch_all(openai=False)
-options = {
-    "api_key": DATADOG_API_KEY,
-    "app_key": DATADOG_APP_KEY,
-}
-initialize(**options)
 
 # Define the origins that should be allowed to make requests to your API
 origins = [
@@ -61,16 +56,33 @@ class CustomError(Exception):
         super().__init__(message)
         
     def report_to_datadog(self):
+        """Report the error to Datadog."""
         span = tracer.current_span()
         if span is not None:
             # Tagging the current span with error information
             span.set_tag(ERROR_MSG, self.message)
             span.set_tag(ERROR_TYPE, type(self).__name__)
             span.set_tag(ERROR_STACK, traceback.format_exc())
+            span.set_tag("custom.status", "error_detected")
             span.error = 1
+
+# Add this class for the request body
+class Post(BaseModel):
+    title: str
+    body: str
+    userId: int
 
 @app.get("/images")
 async def get_all_images(backend: str = "mongo"):
+    """
+    Retrieve all images from the specified backend.
+
+    Args:
+        backend (str): The backend to fetch images from. Defaults to "mongo".
+
+    Returns:
+        List[dict]: A list of images.
+    """
     print(f"Getting all images from {backend}")
     if backend == "mongo":
         images = await get_all_images_mongo()
@@ -82,6 +94,16 @@ async def get_all_images(backend: str = "mongo"):
 
 @app.post("/add_image", status_code=201)
 async def add_photo(file: UploadFile, backend: str = "mongo"):
+    """
+    Upload an image to Amazon S3 and store metadata in the specified backend.
+
+    Args:
+        file (UploadFile): The image file to upload.
+        backend (str): The backend to store image metadata. Defaults to "mongo".
+
+    Returns:
+        dict: A message indicating the result of the operation.
+    """
     print(f"Uploading File ${file.filename} - ${file.content_type}")
 
     # Attempt to upload the image to Amazon S3
@@ -148,6 +170,16 @@ async def add_photo(file: UploadFile, backend: str = "mongo"):
 
 @app.delete("/delete_image/{id}", status_code=201)
 async def delete_image(id, backend: str = "mongo"):
+    """
+    Delete an image from the specified backend and Amazon S3.
+
+    Args:
+        id (str): The ID of the image to delete.
+        backend (str): The backend to delete the image from. Defaults to "mongo".
+
+    Returns:
+        dict: A message indicating the result of the operation.
+    """
     print(f"Attempt to Delete File {id} from {backend}")
 
     if backend == "mongo":
@@ -175,7 +207,42 @@ async def delete_image(id, backend: str = "mongo"):
     except CustomError as err:
         print(err)
 
+@app.post("/create_post")
+@tracer.wrap()
+async def create_post(post: Post):
+    with tracer.trace("create_post_request"):
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                'https://jsonplaceholder.typicode.com/posts',
+                json={
+                    'title': post.title,
+                    'body': post.body,
+                    'userId': post.userId
+                }
+            )
+            return response.json()
 
 @app.get("/")
 async def root():
-    return {"message": "API Root. Welcome to FastAPI!"}
+    """
+    Root endpoint of the FastAPI application.
+
+    Returns:
+        dict: A welcome message.
+    """
+    return {"message": "Welcome to FastAPI!"}
+
+# Initialize tracing before anything else
+patch_all()
+
+# Configure the tracer explicitly
+tracer.configure(
+    hostname=os.getenv('DD_AGENT_HOST', 'datadog-agent'),
+    port=int(os.getenv('DD_AGENT_PORT', '8126'))
+)
+
+# Initialize profiler
+profiler = Profiler()
+profiler.start()
+
+# DynamicInstrumentation.enable()

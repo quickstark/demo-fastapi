@@ -61,18 +61,6 @@ collection = db.vite_demo_images
 # Create a new router for MongoDB Routes
 router_mongo = APIRouter()
 
-
-@router_mongo.post("/add-sample-mongo")
-async def add_sample_mongo():
-    # Add a sample to the collection
-    name = ["Dirk", "Sandy", "John", "Jane", "Joe", "Sally"]
-    age = [20, 30, 40, 50, 60, 70]
-    document = {"name": random.choice(name), "age": random.choice(age)}
-    result = collectio2n.insert_one(document)
-    print(result.inserted_id)
-    return {"message": f"Mongo added id: {result.inserted_id}"}
-
-
 @router_mongo.get(path="/get-image-mongo/{id}")
 async def get_one_mongo(id: str):
     # Fetch one document from the collection
@@ -82,7 +70,7 @@ async def get_one_mongo(id: str):
     return result
 
 
-@router_mongo.get("/get-all-images-mongo")
+# @router_mongo.get("/get-all-images-mongo")
 async def get_all_images_mongo():
     # Get all documents from the collection
     documents = collection.find({})
@@ -112,7 +100,7 @@ async def delete_all_mongo(key: str):
     return {"message": f"Mongo deleted {result.deleted_count} documents"}
 
 
-@router_mongo.delete(path="/delete-one-mongo/{id}")
+# @router_mongo.delete(path="/delete-one-mongo/{id}")
 async def delete_one_mongo(id: str):
     # Delete one document from the collection
 

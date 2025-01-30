@@ -50,11 +50,14 @@ class ImageModel(BaseModel):
 
 @router_postgres.get("/get-image-postgres/{id}", response_model=ImageModel, response_model_exclude_unset=True)
 async def get_image_postgres(id: int):
-    """Fetches a single image from Postgres
+    """
+    Fetch a single image from the Postgres database.
 
     Args:
-        image_id (int): The Image ID
-        response_model (_type_, optional): Defaults to ImageModel.
+        id (int): The ID of the image to fetch.
+
+    Returns:
+        ImageModel: The image data as an ImageModel instance.
     """
     SQL = "SELECT * FROM images WHERE id = %s"
     DATA = (id,)
@@ -71,13 +74,11 @@ async def get_image_postgres(id: int):
 
 
 async def get_all_images_postgres(response_model=List[ImageModel]):
-    """Fetches all images from Postgres.
-
-    Args:
-        response_model (_type_, optional): _description_. Defaults to List[ImageModel].
+    """
+    Fetch all images from the Postgres database.
 
     Returns:
-        list: The list of images from Postgres
+        List[ImageModel]: A list of images as ImageModel instances.
     """
     try:
         cur = conn.cursor()
@@ -99,13 +100,14 @@ async def get_all_images_postgres(response_model=List[ImageModel]):
 
 
 async def add_image_postgres(name: str, url: str, ai_labels: list, ai_text: list):
-    """Adds an image & metadata to Postgres.
+    """
+    Add an image and its metadata to the Postgres database.
 
     Args:
-        name (str): Name of the image
-        url (str): S3 URL of the image
-        ai_labels (list): Any labels identified by Amazon Rekognition
-        ai_text (list): Any text identified by Amazon Rekognition
+        name (str): The name of the image.
+        url (str): The S3 URL of the image.
+        ai_labels (list): Labels identified by Amazon Rekognition.
+        ai_text (list): Text identified by Amazon Rekognition.
     """
 
     cur = conn.cursor()
@@ -127,10 +129,11 @@ async def add_image_postgres(name: str, url: str, ai_labels: list, ai_text: list
 
 
 async def delete_image_postgres(id: int):
-    """Deletes an image from Postgres.
+    """
+    Delete an image from the Postgres database.
 
     Args:
-        id (int): ID of the image to delete
+        id (int): The ID of the image to delete.
     """
     cur = conn.cursor()
     SQL = "DELETE FROM images WHERE id = %s"

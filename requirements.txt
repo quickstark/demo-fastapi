@@ -1,7 +1,7 @@
 boto3==1.25.4
 botocore==1.28.5
 datadog==0.49.1
-ddtrace==2.10.1
+ddtrace==2.19.1
 fastapi==0.100.0
 hypercorn==0.14.4
 openai
@@ -9,3 +9,6 @@ pymongo==4.8.0
 python-dotenv
 psycopg[binary]
 python-multipart
+ddtrace>=1.0.0
+ddtrace[profiling]
+httpx==0.28.1
