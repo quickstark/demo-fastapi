@@ -28,8 +28,10 @@ load_dotenv(dotenv_path)
 # Define the origins that should be allowed to make requests to your API
 origins = [
     "https://quickstark-vite-images.up.railway.app",
-    "http://localhost",
-    # Add any other origins you need
+    "http://localhost:5173",  # Vite's default port
+    "http://localhost:3000",  # Just in case you're using a different port
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
 ]
 
 # Instantiate the FastAPI app
