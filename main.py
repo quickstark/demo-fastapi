@@ -28,6 +28,7 @@ load_dotenv(dotenv_path)
 # Define the origins that should be allowed to make requests to your API
 origins = [
     "https://quickstark-vite-images.up.railway.app",
+    "http://localhost",
     # Add any other origins you need
 ]
 
