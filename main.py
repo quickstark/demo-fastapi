@@ -32,6 +32,9 @@ origins = [
     "http://localhost:3000",  # Just in case you're using a different port
     "http://127.0.0.1:5173",
     "http://127.0.0.1:3000",
+    "http://192.168.1.61:5174",  # Your development IP
+    "http://localhost:5174",      # Local development
+    "*",                          # Allow all origins (only for development!)
 ]
 
 # Instantiate the FastAPI app
@@ -39,7 +42,7 @@ app = FastAPI(debug=True)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins, 
-    allow_credentials=False,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"]
 )
