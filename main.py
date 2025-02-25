@@ -30,10 +30,12 @@ origins = [
     "https://quickstark-vite-images.up.railway.app",
     "http://localhost:5173",  # Vite's default port
     "http://localhost:3000",  # Just in case you're using a different port
+    "http://localhost:5174",      # Local development
     "http://127.0.0.1:5173",
     "http://127.0.0.1:3000",
+    "http://192.168.1.100:3000",
+    "http://192.168.1.100:5173",
     "http://192.168.1.61:5174",  # Your development IP
-    "http://localhost:5174",      # Local development
     "*",                          # Allow all origins (only for development!)
 ]
 
@@ -241,14 +243,24 @@ async def root():
 # Initialize tracing before anything else
 patch_all()
 
-# Configure the tracer explicitly
-tracer.configure(
-    hostname=os.getenv('DD_AGENT_HOST', 'datadog-agent'),
-    port=int(os.getenv('DD_AGENT_PORT', '8126'))
-)
+try:
+    # Let tracer auto-configure from environment variables
+    tracer.configure()
+except Exception as e:
+    print(f"Warning: Could not configure tracer: {e}")
+    # Continue running even if tracer configuration fails
 
-# Initialize profiler
-profiler = Profiler()
-profiler.start()
+# Initialize profiler if enabled
+if os.getenv('DD_PROFILING_ENABLED', 'false').lower() == 'true':
+    try:
+        profiler = Profiler()
+        profiler.start()
+    except Exception as e:
+        print(f"Warning: Could not start profiler: {e}")
 
-# DynamicInstrumentation.enable()
+# Enable dynamic instrumentation if configured
+if os.getenv('DD_DYNAMIC_INSTRUMENTATION_ENABLED', 'false').lower() == 'true':
+    try:
+        DynamicInstrumentation.enable()
+    except Exception as e:
+        print(f"Warning: Could not enable dynamic instrumentation: {e}")
