@@ -10,6 +10,7 @@ from ddtrace.runtime import RuntimeMetrics
 import os
 import traceback
 import httpx
+import asyncio
 from pydantic import BaseModel
 
 from src.amazon import *
@@ -239,6 +240,33 @@ async def root():
         dict: A welcome message.
     """
     return {"message": "Welcome to FastAPI!"}
+
+@app.get("/timeout-test")
+@tracer.wrap()
+async def timeout_test(timeout: int = 0):
+    """
+    Test endpoint that delays response by the specified timeout in seconds.
+    
+    Args:
+        timeout (int): Number of seconds to delay the response. Defaults to 0.
+        
+    Returns:
+        dict: A message indicating the timeout value used.
+    """
+    with tracer.trace("timeout_test"):
+        # Add a span tag to track the requested timeout
+        span = tracer.current_span()
+        if span:
+            span.set_tag("timeout.requested_seconds", timeout)
+        
+        # Sleep for the specified number of seconds
+        if timeout > 0:
+            await asyncio.sleep(timeout)
+            
+        return {
+            "message": f"Response after {timeout} seconds delay",
+            "timeout_value": timeout
+        }
 
 # Initialize tracing before anything else
 patch_all()
