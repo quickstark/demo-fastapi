@@ -12,7 +12,9 @@ from bson.objectid import ObjectId
 from dotenv import load_dotenv
 from fastapi import APIRouter, Response
 from pymongo import MongoClient
+from pymongo.read_preferences import ReadPreference
 from pymongo.server_api import ServerApi
+from ddtrace import Pin
 
 # Load dotenv in the base root refers to application_top
 APP_ROOT = os.path.join(os.path.dirname(__file__), '..')
@@ -27,25 +29,31 @@ load_dotenv(dotenv_path)
 # mongo_pw = MONGO_PW.encode('utf-8')
 
 # Load environment variables
-
 MONGO_CONN = os.environ.get('MONGO_CONN', '')
 MONGO_USER = os.environ.get('MONGO_USER', '')
 MONGO_PW = os.environ.get('MONGO_PW', '')
 
+# Escape special characters in connection string once
 mongo_user = urllib.parse.quote_plus(MONGO_USER)
 mongo_pw = urllib.parse.quote_plus(MONGO_PW)
 
-# escape special characters in connection string
-mongo_user = urllib.parse.quote_plus(mongo_user)
-mongo_pw = urllib.parse.quote_plus(mongo_pw)
-
 # Create the connection string
-uri = f"mongodb+srv://{mongo_user}:{mongo_pw}@{MONGO_CONN}"
+uri = f"mongodb+srv://{mongo_user}:{mongo_pw}@{MONGO_CONN}/?retryWrites=true&w=majority"
 
 print(MONGO_CONN, MONGO_USER, MONGO_PW)
 
 # Create a new client and connect to the server
-client = MongoClient(uri, server_api=ServerApi('1'))
+client = MongoClient(
+    uri,
+    server_api=ServerApi('1'),
+    read_preference=ReadPreference.PRIMARY_PREFERRED,
+    connectTimeoutMS=30000,
+    socketTimeoutMS=30000,
+    serverSelectionTimeoutMS=30000
+)
+
+# Configure the MongoDB client for Database Monitoring
+Pin.override(client, service="mongodb")
 
 # Send a ping to confirm a successful connection
 try:

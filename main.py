@@ -1,37 +1,70 @@
-from dotenv import load_dotenv
-from fastapi import FastAPI, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
-from datadog import initialize, api
-from ddtrace import patch_all, tracer
-from ddtrace.constants import ERROR_MSG, ERROR_TYPE, ERROR_STACK
-from ddtrace.profiling import Profiler
-from ddtrace.debugging import DynamicInstrumentation
-from ddtrace.runtime import RuntimeMetrics
+# System imports
 import os
+import logging
 import traceback
-import httpx
 import asyncio
-from pydantic import BaseModel
 
-from src.amazon import *
-from src.mongo import *
-from src.openai import *
-from src.postgres import *
+# Set environment variables before any Datadog imports
+os.environ["DD_LLMOBS_ML_APP"] = "youtube-summarizer"
+os.environ["DD_LLMOBS_EVALUATORS"] = "ragas_faithfulness,ragas_context_precision,ragas_answer_relevancy"
 
-RuntimeMetrics.enable()
-
-# Load dotenv in the base root refers to application_top
+# Load environment variables
+from dotenv import load_dotenv
 APP_ROOT = os.path.join(os.path.dirname(__file__))
 dotenv_path = os.path.join(APP_ROOT, '.env')
 load_dotenv(dotenv_path)
 
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
-# Define the origins that should be allowed to make requests to your API
+# Import all modules that need to be instrumented BEFORE patching
+import httpx
+import boto3
+import pymongo
+import psycopg
+import openai  # Important for LLM observability
+
+# Now initialize Datadog tracing
+from ddtrace import patch_all, tracer
+from ddtrace.llmobs import LLMObs
+from ddtrace.constants import ERROR_MSG, ERROR_TYPE, ERROR_STACK
+from ddtrace.runtime import RuntimeMetrics
+
+# Use verbose logging to see what's being patched
+logger.info("Initializing Datadog tracing...")
+patch_all(logging=True, httpx=True, pymongo=True, psycopg=True, boto=True, openai=True, fastapi=True)
+logger.info("Datadog tracing initialized")
+
+# Initialize LLM Observability
+LLMObs.enable()
+logger.info("LLM Observability enabled")
+
+# Enable runtime metrics
+RuntimeMetrics.enable()
+logger.info("Runtime metrics enabled")
+
+# Now initialize FastAPI (after patching)
+from fastapi import FastAPI, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+app = FastAPI(debug=True)
+
+# Now import application modules (after patching)
+from src.amazon import *
+from src.mongo import *
+from src.postgres import *
+from src.openai import *
+
+# Define CORS origins
 origins = [
-    "https://quickstark-vite-images.up.railway.app",
     "http://localhost:5173",  # Vite's default port
     "http://localhost:3000",  # Just in case you're using a different port
-    "http://localhost:5174",      # Local development
+    "http://localhost:5174",  # Local development
     "http://127.0.0.1:5173",
     "http://127.0.0.1:3000",
     "http://192.168.1.100:3000",
@@ -40,42 +73,39 @@ origins = [
     "*",                          # Allow all origins (only for development!)
 ]
 
-# Instantiate the FastAPI app
-app = FastAPI(debug=True)
+# Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins, 
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"]
 )
 
+# Initialize other services
+logger.info("Initializing application services...")
+
 # Include the routers
-app.include_router(router_openai)
-app.include_router(router_amazon)
-app.include_router(router_mongo)
-app.include_router(router_postgres)
+try:
+    app.include_router(router_openai)
+    logger.info("OpenAI router initialized")
+    app.include_router(router_amazon)
+    logger.info("Amazon router initialized")
+    app.include_router(router_mongo)
+    logger.info("MongoDB router initialized")
+    app.include_router(router_postgres)
+    logger.info("PostgreSQL router initialized")
+except Exception as e:
+    logger.error(f"Error initializing routers: {e}")
 
-# Define Python user-defined exceptions
+# Initialize Datadog tracer with error handling
+try:
+    tracer.configure()
+    logger.info("Datadog tracer configured")
+except Exception as e:
+    logger.error(f"Warning: Could not configure tracer: {e}")
 
-class CustomError(Exception):
-    """Base class for custom exceptions"""
-    def __init__(self, message):
-        self.message = message
-        super().__init__(message)
-        
-    def report_to_datadog(self):
-        """Report the error to Datadog."""
-        span = tracer.current_span()
-        if span is not None:
-            # Tagging the current span with error information
-            span.set_tag(ERROR_MSG, self.message)
-            span.set_tag(ERROR_TYPE, type(self).__name__)
-            span.set_tag(ERROR_STACK, traceback.format_exc())
-            span.set_tag("custom.status", "error_detected")
-            span.error = 1
-
-# Add this class for the request body
+# Request body model class
 class Post(BaseModel):
     title: str
     body: str
@@ -142,24 +172,22 @@ async def add_photo(file: UploadFile, backend: str = "mongo"):
         print(err)
 
     # Check if the image contained the word "error" and issue an error
-    with tracer.trace("custom.error.example"):
-        try:
-            if amazon_error_text(amztext):
-                error_message = f"Image Text Error - {' '.join(amztext)}"
-                raise CustomError(error_message)
-        except CustomError as e:
-            # Handle the exception and report to Datadog
-            e.report_to_datadog()
+    try:
+        if amazon_error_text(amztext):
+            error_message = f"Image Text Error - {' '.join(amztext)}"
+            raise CustomError(error_message)
+    except CustomError as e:
+        # Handle the exception but don't report to Datadog
+        print(f"Error: {str(e)}")
 
     # Check if the image labels contained the word "bug" or "insect" and issue an error
-    with tracer.trace("custom.error.bug"):
-        try:
-            if amazon_error_label(amzlabels):
-                error_message = f"Image Label Error - {' '.join(amzlabels)}"
-                raise CustomError(error_message)
-        except CustomError as e:
-            # Handle the exception and report to Datadog
-            e.report_to_datadog()
+    try:
+        if amazon_error_label(amzlabels):
+            error_message = f"Image Label Error - {' '.join(amzlabels)}"
+            raise CustomError(error_message)
+    except CustomError as e:
+        # Handle the exception but don't report to Datadog
+        print(f"Error: {str(e)}")
 
     if backend == "mongo":
         # Attempt to upload the image to MongoDB
@@ -267,28 +295,3 @@ async def timeout_test(timeout: int = 0):
             "message": f"Response after {timeout} seconds delay",
             "timeout_value": timeout
         }
-
-# Initialize tracing before anything else
-patch_all()
-
-try:
-    # Let tracer auto-configure from environment variables
-    tracer.configure()
-except Exception as e:
-    print(f"Warning: Could not configure tracer: {e}")
-    # Continue running even if tracer configuration fails
-
-# Initialize profiler if enabled
-if os.getenv('DD_PROFILING_ENABLED', 'false').lower() == 'true':
-    try:
-        profiler = Profiler()
-        profiler.start()
-    except Exception as e:
-        print(f"Warning: Could not start profiler: {e}")
-
-# Enable dynamic instrumentation if configured
-if os.getenv('DD_DYNAMIC_INSTRUMENTATION_ENABLED', 'false').lower() == 'true':
-    try:
-        DynamicInstrumentation.enable()
-    except Exception as e:
-        print(f"Warning: Could not enable dynamic instrumentation: {e}")

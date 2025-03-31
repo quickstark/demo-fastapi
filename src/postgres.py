@@ -10,6 +10,7 @@ import psycopg
 from dotenv import load_dotenv
 from fastapi import APIRouter, Response, encoders
 from pydantic import BaseModel
+from ddtrace import Pin
 
 # Load dotenv in the base root refers to application_top
 APP_ROOT = os.path.join(os.path.dirname(__file__), '..')
@@ -24,15 +25,21 @@ USER = os.getenv('PGUSER')
 PW = os.getenv('PGPASSWORD')
 
 # Instantiate a Postgres connection
-conn = psycopg.connect(
-    dbname=DB, user=USER, password=PW, host=HOST, port=PORT
-)
+try:
+    conn = psycopg.connect(
+        dbname=DB, user=USER, password=PW, host=HOST, port=PORT
+    )
+    # Configure the connection with the proper service name for Database Monitoring
+    Pin.override(conn, service="postgres")
+    print(f"Successfully connected to PostgreSQL database: {DB} at {HOST}:{PORT}")
+except Exception as e:
+    print(f"Error connecting to PostgreSQL: {e}")
+    conn = None  # Initialize conn to None so later code can check if it's None
 
 # Create a new router for Postgres Routes
 router_postgres = APIRouter()
 
-print(DB, HOST, PORT, USER, PW)
-print(conn)
+print(f"PostgreSQL connection parameters: DB={DB}, HOST={HOST}, PORT={PORT}, USER={USER}")
 
 
 class ImageModel(BaseModel):
@@ -59,18 +66,36 @@ async def get_image_postgres(id: int):
     Returns:
         ImageModel: The image data as an ImageModel instance.
     """
+    global conn
     SQL = "SELECT * FROM images WHERE id = %s"
     DATA = (id,)
+    cur = None
     try:
+        # Check if connection is still valid
+        if conn is None or conn.closed:
+            print("Connection is closed. Attempting to reconnect...")
+            # Reconnect using the same credentials
+            conn = psycopg.connect(
+                dbname=DB, user=USER, password=PW, host=HOST, port=PORT
+            )
+            # Apply Pin for DBM when reconnecting
+            Pin.override(conn, service="postgres")
+            
         cur = conn.cursor()
         cur.execute(SQL, DATA)
         image = cur.fetchone()  # Just fetch the specific ID we need
+        if image is None:
+            return {"error": "Image not found"}
         print(f"Fetched Image Postgres: {image[1]}")
         item = ImageModel(id=image[0], name=image[1], width=image[2], height=image[3], url=image[4],
                           url_resize=image[5], date_added=image[6], date_identified=image[7], ai_labels=image[8], ai_text=image[9])
         return item.model_dump()
     except Exception as err:
-        print(err)
+        print(f"Error in get_image_postgres: {err}")
+        return {"error": str(err)}
+    finally:
+        if cur is not None:
+            cur.close()
 
 
 async def get_all_images_postgres(response_model=List[ImageModel]):
@@ -80,11 +105,23 @@ async def get_all_images_postgres(response_model=List[ImageModel]):
     Returns:
         List[ImageModel]: A list of images as ImageModel instances.
     """
+    global conn
+    formatted_photos = []  # Initialize the list outside the try block
+    cur = None  # Initialize cur to None to avoid UnboundLocalError
     try:
+        # Check if connection is still valid
+        if conn is None or conn.closed:
+            print("Connection is closed. Attempting to reconnect...")
+            # Reconnect using the same credentials
+            conn = psycopg.connect(
+                dbname=DB, user=USER, password=PW, host=HOST, port=PORT
+            )
+            # Apply Pin for DBM when reconnecting
+            Pin.override(conn, service="postgres")
+            
         cur = conn.cursor()
         cur.execute("SELECT * FROM images ORDER BY id DESC")
         images = cur.fetchall()
-        formatted_photos = []
         for image in images:
             formatted_photos.append(
                 ImageModel(
@@ -93,9 +130,10 @@ async def get_all_images_postgres(response_model=List[ImageModel]):
                 )
             )
     except Exception as err:
-        print(err)
+        print(f"Error in get_all_images_postgres: {err}")
     finally:
-        cur.close()
+        if cur is not None:  # Check if cursor was created before trying to close it
+            cur.close()
     return formatted_photos
 
 
@@ -109,23 +147,55 @@ async def add_image_postgres(name: str, url: str, ai_labels: list, ai_text: list
         ai_labels (list): Labels identified by Amazon Rekognition.
         ai_text (list): Text identified by Amazon Rekognition.
     """
-
-    cur = conn.cursor()
-    # Note: don't be tempted to use string interpolation on the SQL string ...
-    # have never gotten that to accept a List into a text[] or varchar[] Postgres column
-    SQL = "INSERT INTO images (name, url, ai_labels, ai_text) VALUES (%s, %s, %s, %s)"
-    DATA = (name, url, ai_labels, ai_text)
-
-    # Attempt to write the image metadata to Postgres
+    global conn
+    cur = None
     try:
+        # Check if connection is still valid
+        if conn is None or conn.closed:
+            print("Connection is closed. Attempting to reconnect...")
+            # Reconnect using the same credentials
+            conn = psycopg.connect(
+                dbname=DB, user=USER, password=PW, host=HOST, port=PORT
+            )
+            # Apply Pin for DBM when reconnecting
+            Pin.override(conn, service="postgres")
+        
+        # Ensure we have valid lists for JSON conversion
+        if not isinstance(ai_labels, list):
+            ai_labels = []
+        if not isinstance(ai_text, list):
+            ai_text = []
+            
+        # Ensure each element is a string
+        ai_labels = [str(label) for label in ai_labels]
+        ai_text = [str(text) for text in ai_text]
+        
+        print(f"AI Labels: {ai_labels}")
+        print(f"AI Text: {ai_text}")
+            
+        cur = conn.cursor()
+        # For jsonb columns, use JSON format, not array
+        SQL = "INSERT INTO images (name, url, ai_labels, ai_text) VALUES (%s, %s, %s::jsonb, %s::jsonb)"
+        
+        # Convert Python lists to JSON strings that PostgreSQL can understand
+        import json
+        ai_labels_json = json.dumps(ai_labels)
+        ai_text_json = json.dumps(ai_text)
+        
+        # Use JSON strings for the jsonb columns
+        DATA = (name, url, ai_labels_json, ai_text_json)
+
+        # Attempt to write the image metadata to Postgres
         cur.execute(SQL, DATA)
         conn.commit()
+        return {"message": f"Image {name} added successfully"}
     except Exception as err:
         conn.rollback()
-        print(err)
-
-    # Close the connection
-    cur.close()
+        print(f"Error in add_image_postgres: {err}")
+        return {"error": str(err)}
+    finally:
+        if cur is not None:
+            cur.close()
 
 
 async def delete_image_postgres(id: int):
@@ -135,17 +205,35 @@ async def delete_image_postgres(id: int):
     Args:
         id (int): The ID of the image to delete.
     """
-    cur = conn.cursor()
-    SQL = "DELETE FROM images WHERE id = %s"
-    DATA = (id,)
-
-    # Attempt to delete the image from Postgres
+    global conn
+    cur = None
     try:
+        # Check if connection is still valid
+        if conn is None or conn.closed:
+            print("Connection is closed. Attempting to reconnect...")
+            # Reconnect using the same credentials
+            conn = psycopg.connect(
+                dbname=DB, user=USER, password=PW, host=HOST, port=PORT
+            )
+            # Apply Pin for DBM when reconnecting
+            Pin.override(conn, service="postgres")
+            
+        cur = conn.cursor()
+        SQL = "DELETE FROM images WHERE id = %s"
+        DATA = (id,)
+
+        # Attempt to delete the image from Postgres
         cur.execute(SQL, DATA)
+        rows_deleted = cur.rowcount
         conn.commit()
+        
+        if rows_deleted == 0:
+            return {"message": f"No image with id {id} found to delete"}
+        return {"message": f"Image with id {id} deleted successfully"}
     except Exception as err:
         conn.rollback()
-        print(err)
-
-    # Close the connection
-    cur.close()
+        print(f"Error in delete_image_postgres: {err}")
+        return {"error": str(err)}
+    finally:
+        if cur is not None:
+            cur.close()
