@@ -33,7 +33,6 @@ ENV PYTHONPATH=/app \
     DD_LLMOBS_ENABLED=true \
     DD_LLMOBS_ML_APP=youtube-summarizer \
     DD_LLMOBS_EVALUATORS="ragas_faithfulness,ragas_context_precision,ragas_answer_relevancy" \
-    OPENAI_API_KEY=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 \
     PUID=1026 \
     PGID=100
 
