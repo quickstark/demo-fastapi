@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Dict, Any
 from ddtrace import tracer
 
 from openai import OpenAI
@@ -25,6 +25,8 @@ load_dotenv(dotenv_path)
 OPENAI = os.getenv('OPENAI_API_KEY')
 if not OPENAI:
     logger.warning("OPENAI_API_KEY environment variable not set!")
+else:
+    logger.info("OpenAI API key found.")
 
 client = OpenAI(
     api_key=OPENAI
@@ -62,29 +64,46 @@ async def openai_gen_image(search: str):
 class YouTubeRequest(BaseModel):
     url: str
     instructions: Optional[str] = None
+    save_to_notion: Optional[bool] = False
 
 @router_openai.post("/summarize-youtube")
 @tracer.wrap(service="openai-service", resource="summarize_youtube")
 async def summarize_youtube_video(request: YouTubeRequest):
     """
-    Process a YouTube video to get transcript and generate an AI summary using OpenAI
+    Process a YouTube video to get transcript and generate an AI summary using OpenAI.
+    Optionally save the video details and summary to Notion.
     """
     try:
-        # Process video and get result
-        result = process_youtube_video(request.url, request.instructions)
+        # Process video and get result - now async
+        result = await process_youtube_video(
+            request.url, 
+            request.instructions,
+            save_to_notion=request.save_to_notion
+        )
         
         # Check for errors
         if "error" in result and result["error"]:
             logger.error(f"YouTube processing error: {result['error']}")
             raise HTTPException(status_code=400, detail=result["error"])
         
-        # Return successful response
-        return {
+        # Build response dict with required fields
+        response_dict: Dict[str, Any] = {
             "video_id": result["video_id"],
             "transcript": result["transcript"],
             "language": result["language"],
             "summary": result["summary"]
         }
+        
+        # Add optional fields if they exist in the result
+        for field in ["title", "published_date", "notion_page_id"]:
+            if field in result:
+                response_dict[field] = result[field]
+        
+        # Add notion error if it exists but the request was successful overall
+        if "notion_error" in result:
+            response_dict["notion_error"] = result["notion_error"]
+            
+        return response_dict
     except HTTPException:
         # Re-raise HTTP exceptions
         raise

@@ -11,6 +11,10 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, Response, encoders
 from pydantic import BaseModel
 from ddtrace import Pin
+import logging
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 # Load dotenv in the base root refers to application_top
 APP_ROOT = os.path.join(os.path.dirname(__file__), '..')
@@ -26,20 +30,37 @@ PW = os.getenv('PGPASSWORD')
 
 # Instantiate a Postgres connection
 try:
+    # ---> REMOVE THESE LINES FOR DEBUGGING <---
+    # print("-" * 20)
+    # print(f"DEBUG: Attempting connection with:")
+    # print(f"DEBUG:   DB={DB}")
+    # print(f"DEBUG:   HOST={HOST}")
+    # print(f"DEBUG:   PORT={PORT}")
+    # print(f"DEBUG:   USER={USER}")
+    # print(f"DEBUG:   PW={'******' if PW else None}") # Don't print password directly
+    # print("-" * 20)
+    # ---> END REMOVED DEBUGGING LINES <---
+
+    logger.info(f"Attempting to connect to PostgreSQL: dbname={DB} user={USER} host={HOST} port={PORT}")
     conn = psycopg.connect(
         dbname=DB, user=USER, password=PW, host=HOST, port=PORT
     )
     # Configure the connection with the proper service name for Database Monitoring
     Pin.override(conn, service="postgres")
-    print(f"Successfully connected to PostgreSQL database: {DB} at {HOST}:{PORT}")
+    # print(f"Successfully connected to PostgreSQL database: {DB} at {HOST}:{PORT}")
+    logger.info(f"Successfully connected to PostgreSQL database: {DB} at {HOST}:{PORT}")
 except Exception as e:
-    print(f"Error connecting to PostgreSQL: {e}")
-    conn = None  # Initialize conn to None so later code can check if it's None
+    # print(f"Error connecting to PostgreSQL: {e}")
+    # ---> REMOVE THIS LINE FOR DEBUGGING <---
+    # print(f"DEBUG: Connection failed with HOST={HOST}, PORT={PORT}")
+    logger.error(f"Error connecting to PostgreSQL: {e}")
+    conn = None # Initialize conn to None so later code can check if it's None
 
 # Create a new router for Postgres Routes
 router_postgres = APIRouter()
 
-print(f"PostgreSQL connection parameters: DB={DB}, HOST={HOST}, PORT={PORT}, USER={USER}")
+# print(f"PostgreSQL connection parameters: DB={DB}, HOST={HOST}, PORT={PORT}, USER={USER}, PW={PW}")
+# This print might be redundant now given the connection attempt log, removing it.
 
 
 class ImageModel(BaseModel):
@@ -73,25 +94,39 @@ async def get_image_postgres(id: int):
     try:
         # Check if connection is still valid
         if conn is None or conn.closed:
-            print("Connection is closed. Attempting to reconnect...")
+            # print("Connection is closed. Attempting to reconnect...")
+            logger.warning("PostgreSQL connection is closed. Attempting to reconnect...")
             # Reconnect using the same credentials
+            # ---> ADD THESE LINES FOR DEBUGGING <---
+            # print("-" * 20)
+            # print(f"DEBUG (Reconnect): Attempting connection with:")
+            # print(f"DEBUG (Reconnect):   DB={DB}")
+            # print(f"DEBUG (Reconnect):   HOST={HOST}")
+            # print(f"DEBUG (Reconnect):   PORT={PORT}")
+            # print(f"DEBUG (Reconnect):   USER={USER}")
+            # print(f"DEBUG (Reconnect):   PW={'******' if PW else None}") # Don't print password directly
+            # print("-" * 20)
+            # ---> END DEBUGGING LINES <---
             conn = psycopg.connect(
                 dbname=DB, user=USER, password=PW, host=HOST, port=PORT
             )
             # Apply Pin for DBM when reconnecting
             Pin.override(conn, service="postgres")
+            logger.info(f"Successfully reconnected to PostgreSQL database: {DB} at {HOST}:{PORT}")
             
         cur = conn.cursor()
         cur.execute(SQL, DATA)
         image = cur.fetchone()  # Just fetch the specific ID we need
         if image is None:
             return {"error": "Image not found"}
-        print(f"Fetched Image Postgres: {image[1]}")
+        # print(f"Fetched Image Postgres: {image[1]}") # Keep specific fetch logs if desired, or remove
+        logger.debug(f"Fetched Image Postgres: {image[1]}") # Changed to debug level
         item = ImageModel(id=image[0], name=image[1], width=image[2], height=image[3], url=image[4],
                           url_resize=image[5], date_added=image[6], date_identified=image[7], ai_labels=image[8], ai_text=image[9])
         return item.model_dump()
     except Exception as err:
-        print(f"Error in get_image_postgres: {err}")
+        # print(f"Error in get_image_postgres: {err}")
+        logger.error(f"Error in get_image_postgres: {err}", exc_info=True) # Add exc_info for stack trace
         return {"error": str(err)}
     finally:
         if cur is not None:
@@ -111,13 +146,25 @@ async def get_all_images_postgres(response_model=List[ImageModel]):
     try:
         # Check if connection is still valid
         if conn is None or conn.closed:
-            print("Connection is closed. Attempting to reconnect...")
+            # print("Connection is closed. Attempting to reconnect...")
+            logger.warning("PostgreSQL connection is closed. Attempting to reconnect...")
             # Reconnect using the same credentials
+            # ---> ADD THESE LINES FOR DEBUGGING <---
+            # print("-" * 20)
+            # print(f"DEBUG (Reconnect): Attempting connection with:")
+            # print(f"DEBUG (Reconnect):   DB={DB}")
+            # print(f"DEBUG (Reconnect):   HOST={HOST}")
+            # print(f"DEBUG (Reconnect):   PORT={PORT}")
+            # print(f"DEBUG (Reconnect):   USER={USER}")
+            # print(f"DEBUG (Reconnect):   PW={'******' if PW else None}") # Don't print password directly
+            # print("-" * 20)
+            # ---> END DEBUGGING LINES <---
             conn = psycopg.connect(
                 dbname=DB, user=USER, password=PW, host=HOST, port=PORT
             )
             # Apply Pin for DBM when reconnecting
             Pin.override(conn, service="postgres")
+            logger.info(f"Successfully reconnected to PostgreSQL database: {DB} at {HOST}:{PORT}")
             
         cur = conn.cursor()
         cur.execute("SELECT * FROM images ORDER BY id DESC")
@@ -130,7 +177,8 @@ async def get_all_images_postgres(response_model=List[ImageModel]):
                 )
             )
     except Exception as err:
-        print(f"Error in get_all_images_postgres: {err}")
+        # print(f"Error in get_all_images_postgres: {err}")
+        logger.error(f"Error in get_all_images_postgres: {err}", exc_info=True) # Add exc_info for stack trace
     finally:
         if cur is not None:  # Check if cursor was created before trying to close it
             cur.close()
@@ -152,13 +200,25 @@ async def add_image_postgres(name: str, url: str, ai_labels: list, ai_text: list
     try:
         # Check if connection is still valid
         if conn is None or conn.closed:
-            print("Connection is closed. Attempting to reconnect...")
+            # print("Connection is closed. Attempting to reconnect...")
+            logger.warning("PostgreSQL connection is closed. Attempting to reconnect...")
             # Reconnect using the same credentials
+            # ---> ADD THESE LINES FOR DEBUGGING <---
+            # print("-" * 20)
+            # print(f"DEBUG (Reconnect): Attempting connection with:")
+            # print(f"DEBUG (Reconnect):   DB={DB}")
+            # print(f"DEBUG (Reconnect):   HOST={HOST}")
+            # print(f"DEBUG (Reconnect):   PORT={PORT}")
+            # print(f"DEBUG (Reconnect):   USER={USER}")
+            # print(f"DEBUG (Reconnect):   PW={'******' if PW else None}") # Don't print password directly
+            # print("-" * 20)
+            # ---> END DEBUGGING LINES <---
             conn = psycopg.connect(
                 dbname=DB, user=USER, password=PW, host=HOST, port=PORT
             )
             # Apply Pin for DBM when reconnecting
             Pin.override(conn, service="postgres")
+            logger.info(f"Successfully reconnected to PostgreSQL database: {DB} at {HOST}:{PORT}")
         
         # Ensure we have valid lists for JSON conversion
         if not isinstance(ai_labels, list):
@@ -170,8 +230,10 @@ async def add_image_postgres(name: str, url: str, ai_labels: list, ai_text: list
         ai_labels = [str(label) for label in ai_labels]
         ai_text = [str(text) for text in ai_text]
         
-        print(f"AI Labels: {ai_labels}")
-        print(f"AI Text: {ai_text}")
+        # print(f"AI Labels: {ai_labels}") # Keep specific processing logs if desired, or change level
+        # print(f"AI Text: {ai_text}")
+        logger.debug(f"Adding image to Postgres - AI Labels: {ai_labels}") # Changed to debug level
+        logger.debug(f"Adding image to Postgres - AI Text: {ai_text}") # Changed to debug level
             
         cur = conn.cursor()
         # For jsonb columns, use JSON format, not array
@@ -191,7 +253,8 @@ async def add_image_postgres(name: str, url: str, ai_labels: list, ai_text: list
         return {"message": f"Image {name} added successfully"}
     except Exception as err:
         conn.rollback()
-        print(f"Error in add_image_postgres: {err}")
+        # print(f"Error in add_image_postgres: {err}")
+        logger.error(f"Error in add_image_postgres: {err}", exc_info=True) # Add exc_info for stack trace
         return {"error": str(err)}
     finally:
         if cur is not None:
@@ -210,13 +273,25 @@ async def delete_image_postgres(id: int):
     try:
         # Check if connection is still valid
         if conn is None or conn.closed:
-            print("Connection is closed. Attempting to reconnect...")
+            # print("Connection is closed. Attempting to reconnect...")
+            logger.warning("PostgreSQL connection is closed. Attempting to reconnect...")
             # Reconnect using the same credentials
+            # ---> ADD THESE LINES FOR DEBUGGING <---
+            # print("-" * 20)
+            # print(f"DEBUG (Reconnect): Attempting connection with:")
+            # print(f"DEBUG (Reconnect):   DB={DB}")
+            # print(f"DEBUG (Reconnect):   HOST={HOST}")
+            # print(f"DEBUG (Reconnect):   PORT={PORT}")
+            # print(f"DEBUG (Reconnect):   USER={USER}")
+            # print(f"DEBUG (Reconnect):   PW={'******' if PW else None}") # Don't print password directly
+            # print("-" * 20)
+            # ---> END DEBUGGING LINES <---
             conn = psycopg.connect(
                 dbname=DB, user=USER, password=PW, host=HOST, port=PORT
             )
             # Apply Pin for DBM when reconnecting
             Pin.override(conn, service="postgres")
+            logger.info(f"Successfully reconnected to PostgreSQL database: {DB} at {HOST}:{PORT}")
             
         cur = conn.cursor()
         SQL = "DELETE FROM images WHERE id = %s"
@@ -232,7 +307,8 @@ async def delete_image_postgres(id: int):
         return {"message": f"Image with id {id} deleted successfully"}
     except Exception as err:
         conn.rollback()
-        print(f"Error in delete_image_postgres: {err}")
+        # print(f"Error in delete_image_postgres: {err}")
+        logger.error(f"Error in delete_image_postgres: {err}", exc_info=True) # Add exc_info for stack trace
         return {"error": str(err)}
     finally:
         if cur is not None:

@@ -8,6 +8,7 @@ httpx==0.28.1
 # OpenAI and YouTube
 openai==1.68.2
 youtube_transcript_api==0.6.2
+pytube==15.0.0  # For extracting YouTube metadata without API key
 
 # Database
 pymongo==4.8.0
@@ -22,3 +23,12 @@ ddtrace==2.14.0  # Includes LLM observability functionality
 
 # Datadog (new additions)
 datadog-api-client==2.20.0  # Add API client
+
+# Email
+sendgrid==6.10.0  # SendGrid SDK for email notifications
+
+# New additions
+notion-client>=2.0.0
+google-api-python-client
+google-auth-oauthlib
+google-auth-httplib2

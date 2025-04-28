@@ -5,6 +5,7 @@ Functions for interacting with MongoDB.
 import os
 import random
 import urllib.parse
+import logging
 
 import pymongo
 from bson import json_util
@@ -15,6 +16,9 @@ from pymongo import MongoClient
 from pymongo.read_preferences import ReadPreference
 from pymongo.server_api import ServerApi
 from ddtrace import Pin
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 # Load dotenv in the base root refers to application_top
 APP_ROOT = os.path.join(os.path.dirname(__file__), '..')
@@ -40,7 +44,8 @@ mongo_pw = urllib.parse.quote_plus(MONGO_PW)
 # Create the connection string
 uri = f"mongodb+srv://{mongo_user}:{mongo_pw}@{MONGO_CONN}/?retryWrites=true&w=majority"
 
-print(MONGO_CONN, MONGO_USER, MONGO_PW)
+# print(MONGO_CONN, MONGO_USER, MONGO_PW) # Redundant and prints password
+logger.info(f"Attempting to connect to MongoDB Atlas: {MONGO_CONN}")
 
 # Create a new client and connect to the server
 client = MongoClient(
@@ -58,9 +63,11 @@ Pin.override(client, service="mongodb")
 # Send a ping to confirm a successful connection
 try:
     client.admin.command('ping')
-    print("You successfully connected to MongoDB!")
+    # print("You successfully connected to MongoDB!")
+    logger.info("Successfully connected to MongoDB!")
 except Exception as e:
-    print(e)
+    # print(e)
+    logger.error(f"Error connecting to MongoDB: {e}")
 
 # Access a database and a collection
 db = client.Images
@@ -85,7 +92,8 @@ async def get_all_images_mongo():
     dict_cursor = [doc for doc in documents]
     for d in dict_cursor:
         d["id"] = str(d["_id"])  # swapping _id for id
-        print(d)
+        # print(d) # Keep specific processing logs if desired, or change level
+        logger.debug(f"Mongo document processed: {d}") # Changed to debug
     resp = json_util.dumps(dict_cursor, ensure_ascii=False)
     return Response(content=resp, media_type="application/json")
 
@@ -97,7 +105,8 @@ async def add_image_mongo(name: str, url: str, ai_labels: list, ai_text: list):
     document = {"name": name, "url": url,
                 "ai_labels": ai_labels, "ai_text": ai_text}
     result = collection.insert_one(document)
-    print(result.inserted_id)
+    # print(result.inserted_id)
+    logger.debug(f"Inserted document into MongoDB, ID: {result.inserted_id}") # Changed to debug
     return {"message": f"Mongo added id: {result.inserted_id}"}
 
 

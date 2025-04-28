@@ -3,6 +3,12 @@
 # Parse command line arguments
 USE_CACHE=true
 BUILD_LOCAL=false
+CLEAN_CONTAINERS=false
+RUN_CONTAINER=false
+CONTAINER_NAME="images"
+PORT="9000:8080"
+PGHOST="host.docker.internal"
+
 while [[ $# -gt 0 ]]; do
   case $1 in
     --no-cache)
@@ -13,13 +19,32 @@ while [[ $# -gt 0 ]]; do
       BUILD_LOCAL=true
       shift
       ;;
+    --clean)
+      CLEAN_CONTAINERS=true
+      shift
+      ;;
+    --run)
+      RUN_CONTAINER=true
+      shift
+      ;;
     *)
       echo "Unknown option: $1"
-      echo "Usage: $0 [--no-cache] [--local]"
+      echo "Usage: $0 [--no-cache] [--local] [--clean] [--run]"
+      echo "  --no-cache    : Build without using Docker cache"
+      echo "  --local       : Build for local testing instead of Synology"
+      echo "  --clean       : Remove existing containers named '${CONTAINER_NAME}'"
+      echo "  --run         : Start a container after build (implies --local, removes existing container)"
       exit 1
       ;;
   esac
 done
+
+# If --run is specified, ensure --local is also set
+if [ "$RUN_CONTAINER" = true ]; then
+  BUILD_LOCAL=true
+  # When running, we always want to clean existing containers with the same name
+  CLEAN_CONTAINERS=true
+fi
 
 # Configuration
 IMAGE_NAME="images-api"
@@ -34,6 +59,30 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
+
+# Function to check if container exists
+container_exists() {
+  docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"
+  return $?
+}
+
+# Function to check if container is running
+container_running() {
+  docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"
+  return $?
+}
+
+# Remove existing containers if requested
+if [ "$CLEAN_CONTAINERS" = true ]; then
+  echo -e "\n${YELLOW}Checking for existing containers named '${CONTAINER_NAME}'...${NC}"
+  if container_exists; then
+    echo -e "${YELLOW}Removing existing container...${NC}"
+    docker rm -f ${CONTAINER_NAME}
+    echo -e "${GREEN}✓ Container removed${NC}"
+  else
+    echo -e "${GREEN}✓ No containers to remove${NC}"
+  fi
+fi
 
 # Print header
 if [ "$BUILD_LOCAL" = true ]; then
@@ -75,6 +124,27 @@ if [ $? -eq 0 ]; then
             echo -e "   - Port: 9000:8080"
         else
             echo -e "${RED}✗ Failed to save image${NC}"
+            exit 1
+        fi
+    elif [ "$RUN_CONTAINER" = true ]; then
+        # Start a container with the built image
+        echo -e "\n${YELLOW}Starting container...${NC}"
+        
+        # Run the container (clean already removed any existing container)
+        echo -e "${YELLOW}Creating and starting container...${NC}"
+        docker run -d --name ${CONTAINER_NAME} \
+          -p ${PORT} \
+          -e PGHOST=${PGHOST} \
+          ${IMAGE_NAME}:${IMAGE_TAG}
+        
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}✓ Container started${NC}"
+            echo -e "${GREEN}✓ API available at http://localhost:9000${NC}"
+            echo -e "${YELLOW}Container logs:${NC}"
+            sleep 2 # Give the container a moment to start up
+            docker logs ${CONTAINER_NAME}
+        else
+            echo -e "${RED}✗ Failed to start container${NC}"
             exit 1
         fi
     fi
