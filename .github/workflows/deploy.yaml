@@ -13,7 +13,19 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       
-      # Add Docker Hub authentication step
+      - name: Log SSH Connection Details
+        run: |
+          echo "Host: ${{ secrets.SYNOLOGY_HOST }}"
+          echo "Username: ${{ secrets.SYNOLOGY_USER }}"
+          echo "Port: ${{ secrets.SYNOLOGY_PORT }}"
+          # The following will be masked
+          echo "Key (masked): ${{ secrets.SSH_PRIVATE_KEY }}"
+          # You can check the length or a small non-sensitive part if needed,
+          # but be very careful not to expose actual key material.
+          # For example, to check if it's not empty (though masking makes this less useful for the key itself):
+          echo "Is key secret set (length check might be misleading due to masking): ${{ secrets.SSH_PRIVATE_KEY != '' }}"
+      
+        # Add Docker Hub authentication step
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
