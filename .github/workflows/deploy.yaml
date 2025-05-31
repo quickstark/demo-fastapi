@@ -80,6 +80,14 @@ jobs:
             echo "Testing Docker command with permissions..."
             $DOCKER_CMD --version
             
+            # Login to Docker Hub on Synology
+            echo "Logging into Docker Hub..."
+            if ! echo "${{ secrets.DOCKERHUB_TOKEN }}" | $DOCKER_CMD login --username "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin; then
+              echo "ERROR: Failed to login to Docker Hub"
+              exit 1
+            fi
+            echo "✅ Successfully logged into Docker Hub"
+            
             # Check current image digest before pulling
             echo "Checking current image digest..."
             CURRENT_DIGEST=$($DOCKER_CMD images --digests quickstark/api-images:latest --format "{{.Digest}}" 2>/dev/null || echo "none")
