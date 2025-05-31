@@ -132,7 +132,27 @@ jobs:
               --label "deployment.source=github-actions" \
               --label "deployment.image_digest=$NEW_DIGEST" \
               -p 9000:8080 \
-              -e PGHOST=host.docker.internal \
+              -e DD_SERVICE="${{ secrets.DD_SERVICE }}" \
+              -e DD_ENV="${{ secrets.DD_ENV }}" \
+              -e DD_VERSION="${{ secrets.DD_VERSION }}" \
+              -e PGHOST="${{ secrets.PGHOST }}" \
+              -e PGPORT="${{ secrets.PGPORT }}" \
+              -e PGDATABASE="${{ secrets.PGDATABASE }}" \
+              -e PGUSER="${{ secrets.PGUSER }}" \
+              -e PGPASSWORD="${{ secrets.PGPASSWORD }}" \
+              -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+              -e DATADOG_API_KEY="${{ secrets.DATADOG_API_KEY }}" \
+              -e DATADOG_APP_KEY="${{ secrets.DATADOG_APP_KEY }}" \
+              -e SENDGRID_API_KEY="${{ secrets.SENDGRID_API_KEY }}" \
+              -e NOTION_API_KEY="${{ secrets.NOTION_API_KEY }}" \
+              -e NOTION_DATABASE_ID="${{ secrets.NOTION_DATABASE_ID }}" \
+              -e AMAZON_KEY_ID="${{ secrets.AMAZON_KEY_ID }}" \
+              -e AMAZON_KEY_SECRET="${{ secrets.AMAZON_KEY_SECRET }}" \
+              -e AMAZON_S3_BUCKET="${{ secrets.AMAZON_S3_BUCKET }}" \
+              -e MONGO_CONN="${{ secrets.MONGO_CONN }}" \
+              -e MONGO_USER="${{ secrets.MONGO_USER }}" \
+              -e MONGO_PW="${{ secrets.MONGO_PW }}" \
+              -e BUG_REPORT_EMAIL="${{ secrets.BUG_REPORT_EMAIL }}" \
               -e PUID=1026 \
               -e PGID=100 \
               quickstark/api-images:latest; then
