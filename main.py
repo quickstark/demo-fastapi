@@ -513,6 +513,21 @@ async def root():
     """
     return {"message": "Welcome to FastAPI!"}
 
+@app.get("/health")
+async def health_check():
+    """
+    Health check endpoint for deployment verification.
+    
+    Returns:
+        dict: Health status and basic application info.
+    """
+    return {
+        "status": "healthy",
+        "service": os.getenv('DD_SERVICE', 'fastapi-app'),
+        "version": os.getenv('DD_VERSION', '1.0'),
+        "environment": os.getenv('DD_ENV', 'dev')
+    }
+
 @app.get("/timeout-test")
 @tracer.wrap()
 async def timeout_test(timeout: int = 0):
