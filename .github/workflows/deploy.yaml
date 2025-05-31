@@ -62,8 +62,22 @@ jobs:
               exit 1
             fi
             
-            # Test Docker command
-            echo "Testing Docker command..."
+            # Check if we need sudo for Docker commands
+            echo "Testing Docker permissions..."
+            if $DOCKER_CMD --version >/dev/null 2>&1; then
+              echo "Docker accessible without sudo"
+              DOCKER_CMD="$DOCKER_CMD"
+            elif sudo $DOCKER_CMD --version >/dev/null 2>&1; then
+              echo "Docker requires sudo access"
+              DOCKER_CMD="sudo $DOCKER_CMD"
+            else
+              echo "ERROR: Cannot access Docker even with sudo"
+              echo "Please ensure the SSH user has Docker permissions or sudo access"
+              exit 1
+            fi
+            
+            # Test Docker command with proper permissions
+            echo "Testing Docker command with permissions..."
             $DOCKER_CMD --version
             
             # Check current image digest before pulling
@@ -73,11 +87,21 @@ jobs:
             
             # Pull the latest image with force
             echo "Pulling latest image (forced)..."
-            $DOCKER_CMD pull quickstark/api-images:latest
+            if ! $DOCKER_CMD pull quickstark/api-images:latest; then
+              echo "ERROR: Failed to pull Docker image"
+              exit 1
+            fi
             
             # Check new image digest after pulling
             NEW_DIGEST=$($DOCKER_CMD images --digests quickstark/api-images:latest --format "{{.Digest}}" 2>/dev/null || echo "none")
             echo "New image digest: $NEW_DIGEST"
+            
+            # Compare digests to see if image actually updated
+            if [ "$CURRENT_DIGEST" != "$NEW_DIGEST" ]; then
+              echo "✅ New image pulled successfully (digest changed)"
+            else
+              echo "ℹ️  Image digest unchanged (already latest)"
+            fi
             
             # Force stop and remove existing container (using correct name)
             echo "Force stopping and removing existing container..."
@@ -92,20 +116,27 @@ jobs:
             echo "Starting new container with name 'images-api'..."
             DEPLOY_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
             echo "Deployment timestamp: $DEPLOY_TIME"
-            $DOCKER_CMD run -d \
+            
+            if ! $DOCKER_CMD run -d \
               --name images-api \
               --restart unless-stopped \
               --label "deployment.timestamp=$DEPLOY_TIME" \
               --label "deployment.source=github-actions" \
+              --label "deployment.image_digest=$NEW_DIGEST" \
               -p 9000:8080 \
               -e PGHOST=host.docker.internal \
               -e PUID=1026 \
               -e PGID=100 \
-              quickstark/api-images:latest
+              quickstark/api-images:latest; then
+              echo "ERROR: Failed to start container"
+              exit 1
+            fi
+            
+            echo "✅ Container started successfully"
             
             # Verify container is running and get detailed info
             echo "Verifying container status..."
-            $DOCKER_CMD ps -a | grep images-api || echo "Container not found"
+            $DOCKER_CMD ps -a | grep images-api || echo "Container not found in ps output"
             
             # Show container labels and details
             echo "Container labels and details:"
@@ -120,6 +151,22 @@ jobs:
             $DOCKER_CMD images quickstark/api-images:latest
             
             # Test if the API is responding
-            echo "Testing API endpoint (waiting 5 seconds for startup)..."
-            sleep 5
-            curl -f http://localhost:9000/health 2>/dev/null && echo "API health check passed" || echo "API health check failed (this might be normal if no health endpoint exists)"
+            echo "Testing API endpoint (waiting 10 seconds for startup)..."
+            sleep 10
+            
+            # Try multiple health check approaches
+            if curl -f http://localhost:9000/health 2>/dev/null; then
+              echo "✅ API health check passed (/health endpoint)"
+            elif curl -f http://localhost:9000/ 2>/dev/null; then
+              echo "✅ API root endpoint accessible"
+            else
+              echo "⚠️  API health check failed - checking if container is running..."
+              if $DOCKER_CMD ps | grep images-api | grep -q "Up"; then
+                echo "✅ Container is running, API might still be starting up"
+              else
+                echo "❌ Container is not running properly"
+                $DOCKER_CMD logs images-api
+              fi
+            fi
+            
+            echo "🎉 Deployment completed!"
