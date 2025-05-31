@@ -20,6 +20,12 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       
+      # Install Datadog CI for deployment tracking
+      - name: Install Datadog CI
+        run: |
+          npm install -g @datadog/datadog-ci
+          datadog-ci version
+      
       - name: Build and push Docker image
         id: docker_build
         uses: docker/build-push-action@v5
@@ -32,6 +38,7 @@ jobs:
           cache-to: type=gha,mode=max
       
       - name: Deploy to Synology
+        id: synology_deploy
         uses: appleboy/ssh-action@v1.0.3  # Use more recent stable version
         if: steps.docker_build.outcome == 'success'
         with:
@@ -198,3 +205,41 @@ jobs:
             fi
             
             echo "🎉 Deployment completed!"
+
+      # Mark deployment in Datadog
+      - name: Mark Deployment in Datadog
+        if: steps.synology_deploy.outcome == 'success'
+        env:
+          DD_API_KEY: ${{ secrets.DATADOG_API_KEY }}
+          DD_SITE: datadoghq.com
+          DD_BETA_COMMANDS_ENABLED: 1
+          DD_GITHUB_JOB_NAME: build-and-deploy
+        run: |
+          # Get the commit SHA for the revision
+          REVISION="${{ github.sha }}"
+          SHORT_SHA="${REVISION:0:7}"
+          
+          # Get the current timestamp
+          DEPLOY_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          
+          echo "Marking deployment in Datadog..."
+          echo "Service: ${{ secrets.DD_SERVICE }}"
+          echo "Environment: ${{ secrets.DD_ENV }}"
+          echo "Revision: $SHORT_SHA"
+          echo "Deploy Time: $DEPLOY_TIME"
+          
+          # Mark the deployment with comprehensive tags
+          datadog-ci deployment mark \
+            --env "${{ secrets.DD_ENV }}" \
+            --service "${{ secrets.DD_SERVICE }}" \
+            --revision "$SHORT_SHA" \
+            --tags "deployment_method:github_actions" \
+            --tags "repository:${{ github.repository }}" \
+            --tags "branch:${{ github.ref_name }}" \
+            --tags "actor:${{ github.actor }}" \
+            --tags "workflow:${{ github.workflow }}" \
+            --tags "run_id:${{ github.run_id }}" \
+            --tags "deploy_time:$DEPLOY_TIME" \
+            --no-fail
+          
+          echo "✅ Deployment marked in Datadog successfully!"
