@@ -13,19 +13,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       
-      - name: Log SSH Connection Details
-        run: |
-          echo "Host: ${{ secrets.SYNOLOGY_HOST }}"
-          echo "Username: ${{ secrets.SYNOLOGY_USER }}"
-          echo "Port: ${{ secrets.SYNOLOGY_PORT }}"
-          # The following will be masked
-          echo "Key (masked): ${{ secrets.SSH_PRIVATE_KEY }}"
-          # You can check the length or a small non-sensitive part if needed,
-          # but be very careful not to expose actual key material.
-          # For example, to check if it's not empty (though masking makes this less useful for the key itself):
-          echo "Is key secret set (length check might be misleading due to masking): ${{ secrets.SSH_PRIVATE_KEY != '' }}"
-      
-        # Add Docker Hub authentication step
+      # Add Docker Hub authentication step
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
@@ -52,15 +40,44 @@ jobs:
           username: ${{ secrets.SYNOLOGY_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+            # Debug: Check current user and environment
+            echo "Current user: $(whoami)"
+            echo "Current directory: $(pwd)"
+            echo "PATH: $PATH"
+            
+            # Check if Docker is available in common Synology locations
+            if [ -f /usr/local/bin/docker ]; then
+              DOCKER_CMD="/usr/local/bin/docker"
+              echo "Found Docker at: $DOCKER_CMD"
+            elif [ -f /usr/bin/docker ]; then
+              DOCKER_CMD="/usr/bin/docker"
+              echo "Found Docker at: $DOCKER_CMD"
+            elif command -v docker >/dev/null 2>&1; then
+              DOCKER_CMD="docker"
+              echo "Found Docker in PATH: $(which docker)"
+            else
+              echo "Docker not found. Checking common locations..."
+              ls -la /usr/local/bin/ | grep docker || echo "No docker in /usr/local/bin/"
+              ls -la /usr/bin/ | grep docker || echo "No docker in /usr/bin/"
+              exit 1
+            fi
+            
+            # Test Docker command
+            echo "Testing Docker command..."
+            $DOCKER_CMD --version
+            
             # Pull the latest image
-            docker pull quickstark/api-images:latest
+            echo "Pulling latest image..."
+            $DOCKER_CMD pull quickstark/api-images:latest
             
             # Stop and remove existing container if it exists
-            docker stop images-api 2>/dev/null || true
-            docker rm images-api 2>/dev/null || true
+            echo "Stopping existing container..."
+            $DOCKER_CMD stop images-api 2>/dev/null || echo "No existing container to stop"
+            $DOCKER_CMD rm images-api 2>/dev/null || echo "No existing container to remove"
             
             # Run the new container
-            docker run -d \
+            echo "Starting new container..."
+            $DOCKER_CMD run -d \
               --name images-api \
               --restart unless-stopped \
               -p 9000:8080 \
@@ -68,3 +85,7 @@ jobs:
               -e PUID=1026 \
               -e PGID=100 \
               quickstark/api-images:latest
+            
+            # Verify container is running
+            echo "Verifying container status..."
+            $DOCKER_CMD ps | grep images-api || echo "Container not found in running processes"
