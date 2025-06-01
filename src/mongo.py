@@ -15,7 +15,6 @@ from fastapi import APIRouter, Response
 from pymongo import MongoClient
 from pymongo.read_preferences import ReadPreference
 from pymongo.server_api import ServerApi
-from ddtrace import Pin
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -57,8 +56,8 @@ client = MongoClient(
     serverSelectionTimeoutMS=30000
 )
 
-# Configure the MongoDB client for Database Monitoring
-Pin.override(client, service="mongodb")
+# Note: Database monitoring configuration removed to avoid import issues
+# This can be re-added later when ddtrace Pin import is resolved
 
 # Send a ping to confirm a successful connection
 try:

@@ -105,7 +105,7 @@ app = FastAPI(debug=True)
 from src.amazon import *
 from src.mongo import *
 from src.postgres import *
-from src.openai import router_openai, YouTubeRequest, summarize_youtube_video
+from src.openai_service import router_openai, YouTubeRequest, summarize_youtube_video
 from src.datadog import *  # Import the new Datadog module
 from src.datadog import app_event, bug_detection_event  # Explicit imports for error tracking
 
