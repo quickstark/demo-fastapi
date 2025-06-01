@@ -9,6 +9,41 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
+      # Set up Python for testing
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      
+      # Install dependencies
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      # Configure Datadog Test Optimization
+      - name: Configure Datadog Test Optimization
+        uses: datadog/test-visibility-github-action@v2
+        with:
+          languages: python
+          api_key: ${{ secrets.DATADOG_API_KEY }}
+          site: datadoghq.com
+      
+      # Run tests with Datadog integration
+      - name: Run tests
+        env:
+          DD_ENV: ci
+          DD_SERVICE: ${{ secrets.DD_SERVICE }}
+          DD_VERSION: ${{ github.sha }}
+          DD_API_KEY: ${{ secrets.DATADOG_API_KEY }}
+          DD_SITE: datadoghq.com
+          DD_CIVISIBILITY_ENABLED: true
+          DD_CIVISIBILITY_ITR_ENABLED: true
+        run: |
+          echo "Running tests with Datadog Test Optimization..."
+          pytest --ddtrace -v
+      
       # Set up Docker Buildx for multi-platform builds
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
