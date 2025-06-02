@@ -124,11 +124,17 @@ async def get_one_mongo(id: str):
         return {"error": "MongoDB not available"}
     
     # Fetch one document from the collection
-    result = collection.find_one({"_id": ObjectId(id)})
-    if result:
-        result['id'] = str(result['_id'])
-        del result['_id']
-    return result
+    try:
+        result = collection.find_one({"_id": ObjectId(id)})
+        if result:
+            result['id'] = str(result['_id'])
+            del result['_id']
+            return result
+        else:
+            return {"error": f"Document with id {id} not found"}
+    except Exception as e:
+        logger.error(f"Error fetching document {id}: {e}")
+        return {"error": f"Failed to fetch document: {str(e)}"}
 
 # @router_mongo.get("/get-all-images-mongo")
 async def get_all_images_mongo():
