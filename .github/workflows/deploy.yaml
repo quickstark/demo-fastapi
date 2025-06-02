@@ -40,6 +40,19 @@ jobs:
           DD_SITE: datadoghq.com
           DD_CIVISIBILITY_ENABLED: true
           DD_CIVISIBILITY_ITR_ENABLED: true
+          # MongoDB test environment variables (using dummy values for CI)
+          MONGO_CONN: localhost
+          MONGO_USER: testuser
+          MONGO_PW: testpass
+          # Other optional environment variables with default values
+          OPENAI_API_KEY: dummy-key-for-testing
+          SENDGRID_API_KEY: dummy-key-for-testing
+          NOTION_API_KEY: dummy-key-for-testing
+          NOTION_DATABASE_ID: dummy-id-for-testing
+          AMAZON_KEY_ID: dummy-key-for-testing
+          AMAZON_KEY_SECRET: dummy-secret-for-testing
+          AMAZON_S3_BUCKET: dummy-bucket-for-testing
+          BUG_REPORT_EMAIL: test@example.com
         run: |
           echo "Running tests with Datadog Test Optimization..."
           pytest --ddtrace -v
