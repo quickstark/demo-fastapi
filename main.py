@@ -77,7 +77,6 @@ import openai  # Important for LLM observability
 
 # Now initialize Datadog tracing
 from ddtrace import patch_all, tracer
-from ddtrace.llmobs import LLMObs
 # ERROR_MSG, ERROR_TYPE, ERROR_STACK moved to CustomError
 from ddtrace.runtime import RuntimeMetrics
 
@@ -86,9 +85,19 @@ logger.info("Initializing Datadog tracing...")
 patch_all(logging=True, httpx=True, pymongo=True, psycopg=True, boto=True, openai=True, fastapi=True)
 logger.info("Datadog tracing initialized")
 
-# Initialize LLM Observability
-LLMObs.enable()
-logger.info("LLM Observability enabled")
+# Conditionally initialize LLM Observability based on environment variable
+llmobs_enabled = (os.getenv('DD_LLMOBS_ENABLED', 'true').lower() == 'true' and 
+                  os.getenv('DD_LLMOBS_EVALUATORS_ENABLED', 'true').lower() == 'true')
+if llmobs_enabled:
+    try:
+        from ddtrace.llmobs import LLMObs
+        LLMObs.enable()
+        logger.info("LLM Observability enabled")
+    except Exception as e:
+        logger.warning(f"Failed to enable LLM Observability: {e}")
+        logger.info("Continuing without LLM Observability")
+else:
+    logger.info("LLM Observability disabled via environment variables")
 
 # Enable runtime metrics
 RuntimeMetrics.enable()

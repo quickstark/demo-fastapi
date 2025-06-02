@@ -3,7 +3,8 @@ fastapi==0.100.0
 hypercorn==0.14.4
 python-dotenv==1.0.0
 python-multipart==0.0.6
-httpx==0.28.1
+httpx==0.24.1  # Fixed version for TestClient compatibility
+starlette==0.27.0
 
 # OpenAI and YouTube
 openai==1.68.2
@@ -18,8 +19,8 @@ psycopg[binary]==3.1.18
 boto3==1.25.4
 botocore==1.28.5
 
-# Datadog - properly packaged
-ddtrace==2.14.0  # Includes LLM observability functionality
+# Datadog - updated to use pre-compiled wheels
+ddtrace>=3.8.0  # Updated to use newer version with pre-compiled wheels
 
 # Datadog (new additions)
 datadog-api-client==2.20.0  # Add API client
