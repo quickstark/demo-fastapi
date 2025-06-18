@@ -28,7 +28,7 @@ DD_APP_KEY = os.getenv('DATADOG_APP_KEY')
 
 # Get Amazon SES configuration
 SES_REGION = os.getenv('SES_REGION', 'us-west-2')
-SES_FROM_EMAIL = os.getenv('SES_FROM_EMAIL', 'info@quickstark.com')
+SES_FROM_EMAIL = os.getenv('SES_FROM_EMAIL', 'dirk@quickstark.com')
 BUG_REPORT_EMAIL = os.getenv('BUG_REPORT_EMAIL', 'event-8l2d0xg2@dtdg.co')
 
 # Validate SES configuration
