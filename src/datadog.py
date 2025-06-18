@@ -27,14 +27,14 @@ DD_API_KEY = os.getenv('DATADOG_API_KEY')
 DD_APP_KEY = os.getenv('DATADOG_APP_KEY')
 
 # Get Amazon SES configuration
-SES_REGION = os.getenv('SES_REGION', 'us-east-1')
-SES_FROM_EMAIL = os.getenv('SES_FROM_EMAIL', 'dirk@quickstark.com')
+SES_REGION = os.getenv('SES_REGION', 'us-west-2')
+SES_FROM_EMAIL = os.getenv('SES_FROM_EMAIL', 'info@quickstark.com')
 BUG_REPORT_EMAIL = os.getenv('BUG_REPORT_EMAIL', 'event-8l2d0xg2@dtdg.co')
 
 # Validate SES configuration
 if not SES_REGION or SES_REGION.strip() == '':
-    logger.warning("SES_REGION is empty or not set, using default: us-east-1")
-    SES_REGION = 'us-east-1'
+    logger.warning("SES_REGION is empty or not set, using default: us-west-2")
+    SES_REGION = 'us-west-2'
 
 if not SES_FROM_EMAIL or '@' not in SES_FROM_EMAIL:
     logger.error(f"Invalid SES_FROM_EMAIL: {SES_FROM_EMAIL}")
