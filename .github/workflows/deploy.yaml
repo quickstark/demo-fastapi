@@ -46,11 +46,15 @@ jobs:
           MONGO_PW: testpass
           # Other optional environment variables with default values
           OPENAI_API_KEY: dummy-key-for-testing
-          SENDGRID_API_KEY: dummy-key-for-testing
+          DATADOG_API_KEY: dummy-key-for-testing
+          DATADOG_APP_KEY: dummy-key-for-testing
+          # SENDGRID_API_KEY: dummy-key-for-testing  # REMOVED: Migrating to SES
+          SES_REGION: us-east-1
+          SES_FROM_EMAIL: test@example.com
           NOTION_API_KEY: dummy-key-for-testing
-          NOTION_DATABASE_ID: dummy-id-for-testing
+          NOTION_DATABASE_ID: dummy-key-for-testing
           AMAZON_KEY_ID: dummy-key-for-testing
-          AMAZON_KEY_SECRET: dummy-secret-for-testing
+          AMAZON_KEY_SECRET: dummy-key-for-testing
           AMAZON_S3_BUCKET: dummy-bucket-for-testing
           BUG_REPORT_EMAIL: test@example.com
         run: |
@@ -198,7 +202,8 @@ jobs:
               -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
               -e DATADOG_API_KEY="${{ secrets.DATADOG_API_KEY }}" \
               -e DATADOG_APP_KEY="${{ secrets.DATADOG_APP_KEY }}" \
-              -e SENDGRID_API_KEY="${{ secrets.SENDGRID_API_KEY }}" \
+              -e SES_REGION="${{ secrets.SES_REGION }}" \
+              -e SES_FROM_EMAIL="${{ secrets.SES_FROM_EMAIL }}" \
               -e NOTION_API_KEY="${{ secrets.NOTION_API_KEY }}" \
               -e NOTION_DATABASE_ID="${{ secrets.NOTION_DATABASE_ID }}" \
               -e AMAZON_KEY_ID="${{ secrets.AMAZON_KEY_ID }}" \

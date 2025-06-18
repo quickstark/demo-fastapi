@@ -11,8 +11,8 @@ from pydantic import BaseModel, Field
 from fastapi import APIRouter, HTTPException, Path
 from dotenv import load_dotenv
 from ddtrace import tracer
-from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail
+import boto3
+from botocore.exceptions import ClientError
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -26,10 +26,14 @@ load_dotenv(dotenv_path)
 DD_API_KEY = os.getenv('DATADOG_API_KEY')
 DD_APP_KEY = os.getenv('DATADOG_APP_KEY')
 
-# Get SendGrid API key and email addresses
-SENDGRID_API_KEY = os.getenv('SENDGRID_API_KEY')
+# Get Amazon SES configuration
+SES_REGION = os.getenv('SES_REGION', 'us-east-1')
+SES_FROM_EMAIL = os.getenv('SES_FROM_EMAIL', 'dirk@quickstark.com')
 BUG_REPORT_EMAIL = os.getenv('BUG_REPORT_EMAIL', 'event-8l2d0xg2@dtdg.co')
-SENDER_EMAIL = "dirk@quickstark.com"
+
+# Get AWS credentials (shared with other AWS services)
+AWS_ACCESS_KEY_ID = os.getenv('AMAZON_KEY_ID')
+AWS_SECRET_ACCESS_KEY = os.getenv('AMAZON_KEY_SECRET')
 
 # Get Datadog service information from environment variables or use defaults
 DD_SERVICE = os.getenv('DD_SERVICE', 'fastapi-app')
@@ -43,10 +47,10 @@ if not DD_API_KEY or not DD_APP_KEY:
 else:
     logger.info("Datadog API_KEY and APP_KEY found.")
 
-if not SENDGRID_API_KEY:
-    logger.warning("SENDGRID_API_KEY environment variable not set!")
+if not AWS_ACCESS_KEY_ID or not AWS_SECRET_ACCESS_KEY:
+    logger.warning("AWS credentials (AMAZON_KEY_ID/AMAZON_KEY_SECRET) not set - SES email will not work!")
 else:
-    logger.info("SendGrid API key found.")
+    logger.info(f"AWS credentials found. SES configured for region: {SES_REGION}, from: {SES_FROM_EMAIL}")
 
 # Create a new router for Datadog Routes
 router_datadog = APIRouter()
@@ -98,7 +102,7 @@ class DatadogEventRequest(BaseModel):
 async def send_email_notification(subject: str, body: str, recipient: str = BUG_REPORT_EMAIL, 
                                  tags: Optional[List[str]] = None) -> bool:
     """
-    Send an email notification about an event using SendGrid
+    Send an email notification about an event using Amazon SES
     
     Args:
         subject: Email subject line
@@ -109,11 +113,19 @@ async def send_email_notification(subject: str, body: str, recipient: str = BUG_
     Returns:
         bool: True if email was sent successfully, False otherwise
     """
-    if not SENDGRID_API_KEY:
-        logger.error("SendGrid API key not set, cannot send email")
+    if not AWS_ACCESS_KEY_ID or not AWS_SECRET_ACCESS_KEY:
+        logger.error("AWS credentials not set, cannot send email via SES")
         return False
     
     try:
+        # Create SES client
+        ses_client = boto3.client(
+            'ses',
+            region_name=SES_REGION,
+            aws_access_key_id=AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=AWS_SECRET_ACCESS_KEY
+        )
+        
         # Format subject with Datadog event format - include service name with # in title
         # Format: [<SOURCE_TYPE>] <EVENT_TITLE> #service:<SERVICE_NAME>
         formatted_subject = subject
@@ -143,29 +155,38 @@ async def send_email_notification(subject: str, body: str, recipient: str = BUG_
             formatted_body += f"Service: {DD_SERVICE}\n"
             formatted_body += f"Version: {DD_VERSION}\n"
         
-        # Create a SendGrid message
-        message = Mail(
-            from_email=SENDER_EMAIL,
-            to_emails=recipient,
-            subject=formatted_subject,
-            plain_text_content=formatted_body
+        # Send email using SES
+        response = ses_client.send_email(
+            Source=SES_FROM_EMAIL,
+            Destination={'ToAddresses': [recipient]},
+            Message={
+                'Subject': {'Data': formatted_subject, 'Charset': 'UTF-8'},
+                'Body': {'Text': {'Data': formatted_body, 'Charset': 'UTF-8'}}
+            }
         )
         
-        # Send the email using SendGrid API
-        sg = SendGridAPIClient(SENDGRID_API_KEY)
-        response = sg.send(message)
-        
         # Log the response
-        status_code = response.status_code
-        if status_code >= 200 and status_code < 300:
-            logger.info(f"Email notification sent to {recipient} (SendGrid status: {status_code})")
-            return True
-        else:
-            logger.error(f"SendGrid returned non-successful status code: {status_code}")
-            return False
+        message_id = response.get('MessageId', 'unknown')
+        logger.info(f"Email notification sent to {recipient} via SES (MessageId: {message_id})")
+        return True
+        
+    except ClientError as e:
+        error_code = e.response['Error']['Code']
+        error_message = e.response['Error']['Message']
+        logger.error(f"SES ClientError {error_code}: {error_message}")
+        
+        # Provide specific guidance for common SES errors
+        if error_code == 'MessageRejected':
+            logger.error("Email rejected by SES. Check if sender email is verified and not in sandbox mode.")
+        elif error_code == 'InvalidParameterValue':
+            logger.error("Invalid email address or parameter. Check recipient and sender email formats.")
+        elif error_code == 'AccessDenied':
+            logger.error("Access denied. Check AWS credentials and SES permissions.")
+        
+        return False
         
     except Exception as e:
-        logger.error(f"Failed to send email notification via SendGrid: {str(e)}")
+        logger.error(f"Failed to send email notification via SES: {str(e)}")
         return False
 
 @router_datadog.get("/datadog-hello")

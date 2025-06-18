@@ -61,21 +61,22 @@ This directory contains all project automation scripts organized for clarity and
 - Validates API key formats and provides troubleshooting guidance
 - Shows detailed progress and skipped variables
 
-#### `validate-sendgrid.sh` - SendGrid API Key Validation
+#### `validate-ses.sh` - Amazon SES Email Configuration Validation
 ```bash
-# Validate SendGrid configuration
-./scripts/validate-sendgrid.sh .env.production
+# Validate SES configuration and connectivity
+./scripts/validate-ses.sh .env.production
 ```
 
 **Requirements:**
-- SendGrid API key in environment file
-- `curl` command available
+- AWS credentials (AMAZON_KEY_ID/AMAZON_KEY_SECRET) in environment file
+- Python3 and/or AWS CLI for comprehensive testing
 
 **Features:**
-- Validates API key format and permissions
-- Tests SendGrid API connectivity
-- Checks GitHub Secrets configuration
-- Provides detailed troubleshooting guidance
+- Validates AWS credentials and SES configuration
+- Tests SES API connectivity and permissions
+- Checks sender email verification status
+- Verifies sandbox mode status
+- Validates GitHub Secrets configuration
 
 ### Deployment & Infrastructure Scripts
 
@@ -228,22 +229,34 @@ If you have any automation that references the old paths:
 - Verify all secrets are set correctly
 - Ensure SSH key has proper permissions
 
-**SendGrid 401 Unauthorized Error:**
-- **API Key Format**: Ensure your SendGrid API key follows the format: `SG.xxxxxxxxxxxxxxxxxxxxxxx.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`
-- **API Key Permissions**: Verify your API key has "Mail Send" (Full Access) permissions in SendGrid dashboard
-- **API Key Status**: Check if your API key was revoked or expired in SendGrid
-- **Account Status**: Ensure your SendGrid account is active and not suspended
-- **Environment Variables**: 
-  - Verify `SENDGRID_API_KEY` is properly set in your `.env.production` file
-  - Confirm the secret was uploaded to GitHub correctly (check GitHub repository settings)
-  - Ensure no extra spaces or characters in the API key value
-- **Testing**: Test your SendGrid API key directly:
+**Amazon SES Email Delivery Issues:**
+- **AWS Credentials**: Verify `AMAZON_KEY_ID` and `AMAZON_KEY_SECRET` are correct and have SES permissions
+- **Sender Verification**: Ensure your sender email is verified in AWS SES console
+- **Sandbox Mode**: Check if your SES account is in sandbox mode (only verified emails can receive messages)
+- **Region Configuration**: Verify `SES_REGION` matches where your sender email is verified
+- **Send Quota**: Check if you've exceeded your daily sending quota or sending rate
+
+**Environment Variables**: 
+- Verify SES configuration is properly set in your `.env.production` file:
   ```bash
-  curl -X "POST" "https://api.sendgrid.com/v3/mail/send" \
-    -H "Authorization: Bearer YOUR_API_KEY" \
-    -H "Content-Type: application/json" \
-    -d '{"personalizations":[{"to":[{"email":"test@example.com"}]}],"from":{"email":"dirk@quickstark.com"},"subject":"Test","content":[{"type":"text/plain","value":"Test"}]}'
+  SES_REGION=us-east-1
+  SES_FROM_EMAIL=your-verified-email@domain.com
+  AMAZON_KEY_ID=your-aws-access-key
+  AMAZON_KEY_SECRET=your-aws-secret-key
   ```
+- Check that secrets are uploaded to GitHub: `gh secret list | grep -E "(SES_|AMAZON_)"`
+
+**Testing**: Test your SES configuration:
+```bash
+# Run the validation script
+./scripts/validate-ses.sh .env.production
+
+# Or test with AWS CLI directly
+aws ses send-email --region us-east-1 \
+    --source "your-email@domain.com" \
+    --destination "ToAddresses=test@example.com" \
+    --message "Subject={Data=Test},Body={Text={Data=Test}}"
+```
 
 **SYNOLOGY_SSH_KEY Issues:**
 - The `setup-secrets.sh` script now automatically skips `SYNOLOGY_SSH_KEY` to prevent corruption

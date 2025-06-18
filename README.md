@@ -20,12 +20,12 @@ A production-ready FastAPI server with integrated services for file storage, dat
 - **Environment-based configuration** for dev/staging/production
 
 ### **Integrated Services**
-- **Amazon S3** - File storage and management
+- **Amazon S3** - File storage & management
 - **MongoDB** - Document database with graceful degradation
-- **PostgreSQL** - Relational database
+- **PostgreSQL** - Primary database
 - **OpenAI API** - AI text processing and chat completions
 - **YouTube Integration** - Video transcript processing and Notion saving
-- **SendGrid** - Email notifications
+- **Amazon SES** - Email notifications
 - **Notion API** - Content management integration
 
 ### **Monitoring & Observability**
@@ -147,8 +147,15 @@ PGPASSWORD=your-postgres-password
 # API Keys
 OPENAI_API_KEY=sk-your-openai-api-key
 DATADOG_API_KEY=your-datadog-api-key
-SENDGRID_API_KEY=your-sendgrid-api-key
-NOTION_API_KEY=your-notion-integration-token
+DATADOG_APP_KEY=your-datadog-app-key
+
+# Email notifications (Amazon SES)
+SES_REGION=us-east-1
+SES_FROM_EMAIL=your-verified-email@domain.com
+# Note: Uses existing AWS credentials (AMAZON_KEY_ID/AMAZON_KEY_SECRET)
+
+# Notion integration
+NOTION_API_KEY=secret_your-notion-key
 
 # AWS Configuration
 AMAZON_KEY_ID=your-aws-access-key

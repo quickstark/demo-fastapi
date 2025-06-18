@@ -26,7 +26,7 @@ ddtrace>=3.8.0  # Updated to use newer version with pre-compiled wheels
 datadog-api-client==2.20.0  # Add API client
 
 # Email
-sendgrid==6.10.0  # SendGrid SDK for email notifications
+# sendgrid==6.10.0  # SendGrid SDK for email notifications - REMOVED: Trial ended, migrating to Amazon SES
 
 # Testing
 pytest==7.4.3
