@@ -103,6 +103,20 @@ else:
 RuntimeMetrics.enable()
 logger.info("Runtime metrics enabled")
 
+# Enable Datadog profiling (conditional based on environment variable)
+profiler_enabled = os.getenv('DD_PROFILING_ENABLED', 'true').lower() == 'true'
+if profiler_enabled:
+    try:
+        from ddtrace.profiling import Profiler
+        prof = Profiler()
+        prof.start()
+        logger.info("Datadog profiler enabled and started")
+    except Exception as e:
+        logger.warning(f"Failed to enable Datadog profiler: {e}")
+        logger.info("Continuing without profiler")
+else:
+    logger.info("Datadog profiler disabled via environment variables")
+
 # Now initialize FastAPI (after patching)
 from fastapi import FastAPI, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
