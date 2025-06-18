@@ -194,6 +194,8 @@ jobs:
               -e DD_SERVICE="${{ secrets.DD_SERVICE }}" \
               -e DD_ENV="${{ secrets.DD_ENV }}" \
               -e DD_VERSION="${{ secrets.DD_VERSION }}" \
+              -e DD_PROFILING_ENABLED=true \
+              -e DD_PROFILING_TIMELINE_ENABLED=true \
               -e PGHOST="${{ secrets.PGHOST }}" \
               -e PGPORT="${{ secrets.PGPORT }}" \
               -e PGDATABASE="${{ secrets.PGDATABASE }}" \
