@@ -52,6 +52,16 @@ REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 echo -e "${YELLOW}📦 Repository: $REPO${NC}"
 echo ""
 
+# Show what variables will be skipped
+echo -e "${YELLOW}📋 Variables that will be skipped:${NC}"
+echo -e "  • Empty or placeholder values (your-*, sk-your-*, secret_your-*)"
+echo -e "  • Manually managed secrets: ${SKIP_VARIABLES[*]}"
+echo -e "  • Comments and empty lines"
+echo ""
+
+# Define variables to skip (these should be managed manually in GitHub)
+SKIP_VARIABLES=("SYNOLOGY_SSH_KEY")
+
 # Counter for secrets
 SECRET_COUNT=0
 SKIPPED_COUNT=0
@@ -70,6 +80,13 @@ while IFS= read -r line || [ -n "$line" ]; do
         
         # Remove quotes if present
         VALUE=$(echo "$VALUE" | sed 's/^["'\'']\|["'\'']$//g')
+        
+        # Check if this key should be skipped
+        if [[ " ${SKIP_VARIABLES[@]} " =~ " ${KEY} " ]]; then
+            echo -e "${YELLOW}⏭️  Skipping $KEY (manually managed secret)${NC}"
+            ((SKIPPED_COUNT++))
+            continue
+        fi
         
         # Skip if value is empty or placeholder
         if [[ -z "$VALUE" || "$VALUE" =~ ^(your-|sk-your-|secret_your-) ]]; then
@@ -95,5 +112,12 @@ echo -e "${YELLOW}⏭️  Skipped $SKIPPED_COUNT placeholder values${NC}"
 echo ""
 echo -e "${YELLOW}💡 Next steps:${NC}"
 echo "1. Verify secrets in GitHub: https://github.com/$REPO/settings/secrets/actions"
-echo "2. Push to main branch to trigger deployment"
-echo "3. Monitor the GitHub Actions workflow" 
+echo "2. Manually verify these secrets are set correctly in GitHub:"
+echo "   • SYNOLOGY_SSH_KEY (should be your private SSH key)"
+echo "3. Push to main branch to trigger deployment"
+echo "4. Monitor the GitHub Actions workflow"
+echo ""
+echo -e "${YELLOW}⚠️  Important Notes:${NC}"
+echo "• SYNOLOGY_SSH_KEY is NOT uploaded by this script (to prevent corruption)"
+echo "• Ensure your SENDGRID_API_KEY format is: SG.xxxxxxxxxxxxxxxxxxxxxxx.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+echo "• Verify SendGrid API key has 'Mail Send' permissions in SendGrid dashboard" 

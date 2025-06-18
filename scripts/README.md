@@ -46,6 +46,37 @@ This directory contains all project automation scripts organized for clarity and
 - `no-mongo` - All tests except MongoDB
 - `all` - All tests (default)
 
+#### `setup-secrets.sh` - GitHub Secrets Management
+```bash
+# Upload secrets from environment file
+./scripts/setup-secrets.sh .env.production
+```
+
+**Requirements:**
+- GitHub CLI (`gh`) must be installed and authenticated
+- Valid environment file with actual values (not placeholders)
+
+**Features:**
+- Automatically skips `SYNOLOGY_SSH_KEY` to prevent corruption
+- Validates API key formats and provides troubleshooting guidance
+- Shows detailed progress and skipped variables
+
+#### `validate-sendgrid.sh` - SendGrid API Key Validation
+```bash
+# Validate SendGrid configuration
+./scripts/validate-sendgrid.sh .env.production
+```
+
+**Requirements:**
+- SendGrid API key in environment file
+- `curl` command available
+
+**Features:**
+- Validates API key format and permissions
+- Tests SendGrid API connectivity
+- Checks GitHub Secrets configuration
+- Provides detailed troubleshooting guidance
+
 ### Deployment & Infrastructure Scripts
 
 #### `deploy.sh` - Production Deployment
@@ -63,16 +94,6 @@ This directory contains all project automation scripts organized for clarity and
 - GitHub secrets upload
 - Deployment monitoring
 - Post-deployment guidance
-
-#### `setup-secrets.sh` - GitHub Secrets Management
-```bash
-# Upload secrets from environment file
-./scripts/setup-secrets.sh .env.production
-```
-
-**Requirements:**
-- GitHub CLI (`gh`) must be installed and authenticated
-- Valid environment file with actual values (not placeholders)
 
 #### `enterprise-setup.sh` - Enterprise CI/CD Features
 ```bash
@@ -205,4 +226,26 @@ If you have any automation that references the old paths:
 **Deployment Issues:**
 - Check GitHub Actions logs
 - Verify all secrets are set correctly
-- Ensure SSH key has proper permissions 
+- Ensure SSH key has proper permissions
+
+**SendGrid 401 Unauthorized Error:**
+- **API Key Format**: Ensure your SendGrid API key follows the format: `SG.xxxxxxxxxxxxxxxxxxxxxxx.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`
+- **API Key Permissions**: Verify your API key has "Mail Send" (Full Access) permissions in SendGrid dashboard
+- **API Key Status**: Check if your API key was revoked or expired in SendGrid
+- **Account Status**: Ensure your SendGrid account is active and not suspended
+- **Environment Variables**: 
+  - Verify `SENDGRID_API_KEY` is properly set in your `.env.production` file
+  - Confirm the secret was uploaded to GitHub correctly (check GitHub repository settings)
+  - Ensure no extra spaces or characters in the API key value
+- **Testing**: Test your SendGrid API key directly:
+  ```bash
+  curl -X "POST" "https://api.sendgrid.com/v3/mail/send" \
+    -H "Authorization: Bearer YOUR_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"personalizations":[{"to":[{"email":"test@example.com"}]}],"from":{"email":"dirk@quickstark.com"},"subject":"Test","content":[{"type":"text/plain","value":"Test"}]}'
+  ```
+
+**SYNOLOGY_SSH_KEY Issues:**
+- The `setup-secrets.sh` script now automatically skips `SYNOLOGY_SSH_KEY` to prevent corruption
+- Manually manage this secret in GitHub repository settings
+- Ensure the SSH key format is preserved (including line breaks) 
