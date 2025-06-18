@@ -31,6 +31,16 @@ SES_REGION = os.getenv('SES_REGION', 'us-east-1')
 SES_FROM_EMAIL = os.getenv('SES_FROM_EMAIL', 'dirk@quickstark.com')
 BUG_REPORT_EMAIL = os.getenv('BUG_REPORT_EMAIL', 'event-8l2d0xg2@dtdg.co')
 
+# Validate SES configuration
+if not SES_REGION or SES_REGION.strip() == '':
+    logger.warning("SES_REGION is empty or not set, using default: us-east-1")
+    SES_REGION = 'us-east-1'
+
+if not SES_FROM_EMAIL or '@' not in SES_FROM_EMAIL:
+    logger.error(f"Invalid SES_FROM_EMAIL: {SES_FROM_EMAIL}")
+
+logger.info(f"SES Configuration - Region: '{SES_REGION}', From: '{SES_FROM_EMAIL}'")
+
 # Get AWS credentials (shared with other AWS services)
 AWS_ACCESS_KEY_ID = os.getenv('AMAZON_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.getenv('AMAZON_KEY_SECRET')
@@ -118,13 +128,22 @@ async def send_email_notification(subject: str, body: str, recipient: str = BUG_
         return False
     
     try:
+        # Validate region before creating client
+        if not SES_REGION or SES_REGION.strip() == '':
+            logger.error("SES_REGION is empty - this will cause endpoint errors")
+            return False
+            
+        logger.debug(f"Creating SES client with region: '{SES_REGION}'")
+        
         # Create SES client
         ses_client = boto3.client(
             'ses',
-            region_name=SES_REGION,
+            region_name=SES_REGION.strip(),  # Ensure no whitespace
             aws_access_key_id=AWS_ACCESS_KEY_ID,
             aws_secret_access_key=AWS_SECRET_ACCESS_KEY
         )
+        
+        logger.debug(f"SES client created successfully for region: {SES_REGION}")
         
         # Format subject with Datadog event format - include service name with # in title
         # Format: [<SOURCE_TYPE>] <EVENT_TITLE> #service:<SERVICE_NAME>
