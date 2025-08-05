@@ -45,13 +45,19 @@ AWS_SESSION = boto3.Session(
 
 @router_amazon.post(path="/upload-image-amazon/")
 def amazon_upload(file: UploadFile = File(...)) -> str:
-    """Uploads a file to S3
+    """Upload an image file to Amazon S3 bucket.
+    
+    Uploads the provided image file to the configured S3 bucket and returns
+    the public URL for accessing the uploaded file.
 
     Args:
-        file (IO): A valid image file
+        file (UploadFile): The image file to upload to S3.
 
     Returns:
-        string: The uploaded file URL
+        str: The public URL of the uploaded file, or error message if upload fails.
+        
+    Raises:
+        Exception: If S3 upload fails or bucket is not accessible.
     """
     awsclient = AWS_SESSION.resource("s3",)
     bucket = awsclient.Bucket(AWS_BUCKET)
@@ -69,21 +75,28 @@ def amazon_upload(file: UploadFile = File(...)) -> str:
             return f"https://{AWS_BUCKET}.s3.amazonaws.com/{file.filename}"
         else:
             logger.warning(f"S3 upload for {file.filename} returned status {response['ResponseMetadata']['HTTPStatusCode']}. No URL returned.")
-            return "Nothing was uploaded"
+            logger.error(f"S3 upload failed with status {response['ResponseMetadata']['HTTPStatusCode']}")
+            return None
     except Exception as err:
-        # print(err)
         logger.error(f"Error uploading {file.filename} to S3: {err}", exc_info=True)
+        return None
 
 
 @router_amazon.delete(path="/delete-one-s3/{key}")
 async def amazon_delete_one_s3(key: str) -> bool:
-    """Deletes a file from S3
+    """Delete a file from Amazon S3 bucket.
+    
+    Removes the specified file from the configured S3 bucket using the
+    provided key (filename).
 
     Args:
-        key (str): a valid S3 file key (S3 uses the filename as the key)
+        key (str): The S3 object key (filename) to delete.
 
     Returns:
-        bool: True if the file was deleted, False if not
+        bool: True if the file was successfully deleted, False otherwise.
+        
+    Raises:
+        Exception: If S3 deletion fails or key does not exist.
     """
     # Create an S3 Client from our authenticated AWS Session
     # Use to delete our S3 file using the filename

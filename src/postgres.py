@@ -30,16 +30,6 @@ PW = os.getenv('PGPASSWORD')
 
 # Instantiate a Postgres connection
 try:
-    # ---> REMOVE THESE LINES FOR DEBUGGING <---
-    # print("-" * 20)
-    # print(f"DEBUG: Attempting connection with:")
-    # print(f"DEBUG:   DB={DB}")
-    # print(f"DEBUG:   HOST={HOST}")
-    # print(f"DEBUG:   PORT={PORT}")
-    # print(f"DEBUG:   USER={USER}")
-    # print(f"DEBUG:   PW={'******' if PW else None}") # Don't print password directly
-    # print("-" * 20)
-    # ---> END REMOVED DEBUGGING LINES <---
 
     logger.info(f"Attempting to connect to PostgreSQL: dbname={DB} user={USER} host={HOST} port={PORT}")
     conn = psycopg.connect(
@@ -47,23 +37,33 @@ try:
     )
     # Configure the connection with the proper service name for Database Monitoring
     Pin.override(conn, service="postgres")
-    # print(f"Successfully connected to PostgreSQL database: {DB} at {HOST}:{PORT}")
+    # Connection successful - logging handled above
     logger.info(f"Successfully connected to PostgreSQL database: {DB} at {HOST}:{PORT}")
 except Exception as e:
-    # print(f"Error connecting to PostgreSQL: {e}")
-    # ---> REMOVE THIS LINE FOR DEBUGGING <---
-    # print(f"DEBUG: Connection failed with HOST={HOST}, PORT={PORT}")
-    logger.error(f"Error connecting to PostgreSQL: {e}")
-    conn = None # Initialize conn to None so later code can check if it's None
+    logger.error(f"Error connecting to PostgreSQL: {e}", exc_info=True)
+    conn = None  # Initialize conn to None so later code can check if it's None
 
 # Create a new router for Postgres Routes
 router_postgres = APIRouter()
 
-# print(f"PostgreSQL connection parameters: DB={DB}, HOST={HOST}, PORT={PORT}, USER={USER}, PW={PW}")
-# This print might be redundant now given the connection attempt log, removing it.
+# PostgreSQL connection parameters logged above during connection attempt
 
 
 class ImageModel(BaseModel):
+    """Pydantic model for image data stored in PostgreSQL.
+    
+    Attributes:
+        id (int): Unique identifier for the image.
+        name (str): Original filename of the image.
+        width (Optional[int]): Image width in pixels.
+        height (Optional[int]): Image height in pixels.
+        url (Optional[str]): S3 URL of the original image.
+        url_resize (Optional[str]): S3 URL of resized version.
+        date_added (Optional[date]): Date image was added to database.
+        date_identified (Optional[date]): Date AI analysis was performed.
+        ai_labels (Optional[list]): AI-detected labels from image analysis.
+        ai_text (Optional[list]): AI-extracted text from image.
+    """
     id: int
     name: str
     width: Optional[int]

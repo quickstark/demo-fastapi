@@ -198,7 +198,7 @@ async def get_all_images(backend: str = "mongo"):
     Returns:
         List[dict]: A list of images.
     """
-    print(f"Getting all images from {backend}")
+    logger.info(f"Getting all images from {backend}")
     if backend == "mongo":
         images = await get_all_images_mongo()
     elif backend == "postgres":
@@ -219,7 +219,7 @@ async def add_photo(file: UploadFile, backend: str = "mongo"):
     Returns:
         dict: A message indicating the result of the operation.
     """
-    print(f"Uploading File ${file.filename} - ${file.content_type}")
+    logger.info(f"Uploading File {file.filename} - {file.content_type}")
     
     # Variables to store image data
     s3_url = None
@@ -273,7 +273,7 @@ async def add_photo(file: UploadFile, backend: str = "mongo"):
     # Save image data to database first, before checking for moderation/errors
     if backend == "mongo":
         # Attempt to upload the image to MongoDB
-        print("Adding image to MongoDB")
+        logger.info("Adding image to MongoDB")
         try:
             result = await add_image_mongo(file.filename, s3_url, amzlabels, amztext)
             logger.info(f"Successfully saved image {file.filename} to MongoDB")
@@ -465,7 +465,7 @@ async def delete_image(id, backend: str = "mongo"):
     Returns:
         dict: A message indicating the result of the operation.
     """
-    print(f"Attempt to Delete File {id} from {backend}")
+    logger.info(f"Attempt to Delete File {id} from {backend}")
 
     if backend == "mongo":
         # Attempt to delete the image from MongoDB
@@ -501,9 +501,9 @@ async def delete_image(id, backend: str = "mongo"):
 
     # Attempt to delete the image from Amazon S3
     try:
-        print(image)
+        logger.debug(f"Image to delete: {image}")
         res = await amazon_delete_one_s3(image["name"])
-        print(res)
+        logger.debug(f"S3 deletion result: {res}")
     except CustomError as e:
         error_tags = [("error.source", "s3"), ("error.type", "delete_failure"), ("error.id", id)]
         logger.error(f"S3 delete error: {str(e)}")

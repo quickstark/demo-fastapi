@@ -78,11 +78,11 @@ def get_mongo_client():
         
         # Send a ping to confirm a successful connection
         _client.admin.command('ping')
-        logger.info("Successfully connected to MongoDB!")
+        logger.info("Successfully connected to MongoDB Atlas")
         return _client
         
     except Exception as e:
-        logger.error(f"Error connecting to MongoDB: {e}")
+        logger.error(f"Error connecting to MongoDB: {e}", exc_info=True)
         _client = None
         return None
 

@@ -37,16 +37,33 @@ router_openai = APIRouter()
 
 @router_openai.get("/openai-hello")
 async def openai_hello():
-    """OpenAI Fetch Account Info
+    """Health check endpoint for OpenAI service.
+    
+    Simple endpoint to verify the OpenAI service is responding and
+    available for processing requests.
 
     Returns:
-        Dict: Account Information
+        dict: Service status message confirming OpenAI endpoint is accessible.
     """
     return {"message": "You've reached the OpenAI endpoint"}
 
 @router_openai.get("/openai-gen-image/{search}")
 @tracer.wrap(service="openai-service", resource="generate_image")
-async def openai_gen_image(search: str): 
+async def openai_gen_image(search: str):
+    """Generate an image using OpenAI's DALL-E 3 model.
+    
+    Creates a 1024x1024 image based on the provided text prompt using
+    OpenAI's DALL-E 3 image generation model.
+
+    Args:
+        search (str): The text prompt describing the image to generate.
+
+    Returns:
+        str: URL of the generated image.
+        
+    Raises:
+        HTTPException: If image generation fails or API is unavailable.
+    """ 
     try:
         response = client.images.generate(
             model="dall-e-3",
@@ -62,6 +79,13 @@ async def openai_gen_image(search: str):
         raise HTTPException(status_code=500, detail=f"Error generating image: {str(e)}")
 
 class YouTubeRequest(BaseModel):
+    """Request model for YouTube video processing.
+    
+    Attributes:
+        url (str): YouTube video URL to process.
+        instructions (Optional[str]): Custom instructions for AI summarization.
+        save_to_notion (Optional[bool]): Whether to save results to Notion database.
+    """
     url: str
     instructions: Optional[str] = None
     save_to_notion: Optional[bool] = False
@@ -69,9 +93,22 @@ class YouTubeRequest(BaseModel):
 @router_openai.post("/summarize-youtube")
 @tracer.wrap(service="openai-service", resource="summarize_youtube")
 async def summarize_youtube_video(request: YouTubeRequest):
-    """
-    Process a YouTube video to get transcript and generate an AI summary using OpenAI.
-    Optionally save the video details and summary to Notion.
+    """Process YouTube video to generate AI-powered summary.
+    
+    Downloads the video transcript, generates an intelligent summary using OpenAI,
+    and optionally saves the results to Notion database for future reference.
+
+    Args:
+        request (YouTubeRequest): Contains YouTube URL, custom instructions, 
+                                 and Notion save preference.
+
+    Returns:
+        dict: Contains video metadata, transcript, and AI-generated summary.
+              Includes Notion page ID if saved to database.
+        
+    Raises:
+        HTTPException: If video processing fails, transcript unavailable,
+                      or AI summarization encounters errors.
     """
     try:
         # Process video and get result - now async

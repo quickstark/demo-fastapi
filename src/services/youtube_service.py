@@ -16,7 +16,24 @@ import re
 logger = logging.getLogger(__name__)
 
 async def process_youtube_video(youtube_url: str, instructions: str = None, save_to_notion: bool = False):
-    """Process a YouTube video to get transcript, metadata, and generate summary"""
+    """Process YouTube video to extract transcript and generate AI summary.
+    
+    Downloads video transcript, retrieves metadata using pytube, generates
+    AI-powered summary using OpenAI, and optionally saves to Notion database.
+    
+    Args:
+        youtube_url (str): Valid YouTube video URL to process.
+        instructions (str, optional): Custom instructions for AI summarization.
+        save_to_notion (bool, optional): Whether to save results to Notion. Defaults to False.
+        
+    Returns:
+        dict: Contains video_id, transcript, language, summary, and optional metadata.
+              If save_to_notion=True, includes notion_page_id on successful save.
+              
+    Raises:
+        Exception: If video ID extraction fails, transcript unavailable,
+                  or AI processing encounters errors.
+    """
     try:
         # Extract video ID
         video_id = get_video_id(youtube_url)
@@ -35,7 +52,7 @@ async def process_youtube_video(youtube_url: str, instructions: str = None, save
                 logger.warning(f"Video details warning for {video_id}: {video_details['error']}")
                 # We'll continue with the basic metadata that was returned
 
-        logger.info(f"Retrieved video details: Title='{video_details.get('title', 'Unknown')}' Channel='{video_details.get('channel', 'Unknown')}'")
+        logger.info(f"Retrieved video metadata: Title='{video_details.get('title', 'Unknown')}', Channel='{video_details.get('channel', 'Unknown')}'")
 
         # Get transcript - Run in executor since YouTubeTranscriptApi is synchronous
         loop = asyncio.get_running_loop()
@@ -50,7 +67,8 @@ async def process_youtube_video(youtube_url: str, instructions: str = None, save
         # Generate summary - use AsyncOpenAI client
         summary_result = await generate_video_summary_async(transcript_result["transcript"], instructions)
         if "error" in summary_result:
-            logger.error(f"Summary error for video {video_id}: {summary_result['error']}")
+            logger.error(f"Summary generation error for video {video_id}: {summary_result['error']}")
+            return summary_result
             
         # Save to Notion if requested and we have a summary
         notion_result = {}
