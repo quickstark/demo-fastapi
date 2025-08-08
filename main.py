@@ -128,6 +128,7 @@ app = FastAPI(debug=True)
 from src.amazon import *
 from src.mongo import *
 from src.postgres import *
+from src.sqlserver import *
 from src.openai_service import router_openai, YouTubeRequest, summarize_youtube_video
 from src.datadog import *  # Import the new Datadog module
 from src.datadog import app_event, bug_detection_event  # Explicit imports for error tracking
@@ -168,6 +169,8 @@ try:
     logger.info("MongoDB router included.")
     app.include_router(router_postgres, prefix="/api/v1", tags=["PostgreSQL"])
     logger.info("PostgreSQL router included.")
+    app.include_router(router_sqlserver, prefix="/api/v1", tags=["SQL Server"])
+    logger.info("SQL Server router included.")
     app.include_router(router_datadog)  # Include the new Datadog router
     logger.info("Datadog router included.")
 except Exception as e:
@@ -203,6 +206,8 @@ async def get_all_images(backend: str = "mongo"):
         images = await get_all_images_mongo()
     elif backend == "postgres":
         images = await get_all_images_postgres()
+    elif backend == "sqlserver":
+        images = await get_all_images_sqlserver()
     else:
         raise CustomError("Invalid backend specified")
     return images
@@ -288,6 +293,14 @@ async def add_photo(file: UploadFile, backend: str = "mongo"):
         except Exception as e:
             logger.error(f"PostgreSQL storage error: {str(e)}")
             return {"error": str(e), "type": "postgres_error", "filename": file.filename}
+    elif backend == "sqlserver":
+        # Attempt to upload the image to SQL Server
+        try:
+            result = await add_image_sqlserver(file.filename, s3_url, amzlabels, amztext)
+            logger.info(f"Successfully saved image {file.filename} to SQL Server")
+        except Exception as e:
+            logger.error(f"SQL Server storage error: {str(e)}")
+            return {"error": str(e), "type": "sqlserver_error", "filename": file.filename}
     else:
         error_tags = [
             ("error.source", "backend_selection"),
@@ -485,6 +498,15 @@ async def delete_image(id, backend: str = "mongo"):
             error_tags = [("error.source", "postgres"), ("error.type", "delete_failure"), ("error.id", id)]
             logger.error(f"PostgreSQL delete error: {str(e)}")
             return {"error": str(e), "type": "postgres_delete_error", "id": id}
+    elif backend == "sqlserver":
+        # Attempt to delete the image from SQL Server
+        try:
+            image = await get_image_sqlserver(int(id))
+            res = await delete_image_sqlserver(int(id))
+        except CustomError as e:
+            error_tags = [("error.source", "sqlserver"), ("error.type", "delete_failure"), ("error.id", id)]
+            logger.error(f"SQL Server delete error: {str(e)}")
+            return {"error": str(e), "type": "sqlserver_delete_error", "id": id}
     else:
         error_tags = [
             ("error.source", "backend_selection"),
