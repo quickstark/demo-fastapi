@@ -14,7 +14,7 @@ pytube==15.0.0  # For extracting YouTube metadata without API key
 # Database
 pymongo==4.8.0
 psycopg[binary]==3.1.18
-pytds>=1.9.0  # SQL Server support (pure Python)
+python-tds>=1.16.0  # SQL Server support (pure Python)
 
 # AWS
 boto3==1.25.4

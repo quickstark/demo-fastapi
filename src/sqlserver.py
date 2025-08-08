@@ -48,8 +48,8 @@ CONNECTION_PARAMS = {
     'user': SQLSERVER_USER,
     'password': SQLSERVER_PW,
     'timeout': 30,
-    'login_timeout': 30,
-    'tds_version': '7.4'  # Modern TDS version
+    'login_timeout': 30
+    # Note: tds_version auto-negotiated by default (best practice)
 }
 
 # Thread pool for async operations
