@@ -201,10 +201,16 @@ async def execute_non_query_async(query: str, params: tuple = None):
         
         cursor = connection.cursor()
         try:
+            logger.info(f"SQL Server Execute Debug - About to execute query with {len(params or ())} parameters")
+            logger.info(f"SQL Server Execute Debug - Query: {query}")
+            logger.info(f"SQL Server Execute Debug - Params: {params}")
+            
             cursor.execute(query, params or ())
             connection.commit()
+            logger.info(f"SQL Server Execute Debug - Query executed successfully, {cursor.rowcount} rows affected")
             return cursor.rowcount
         except Exception as e:
+            logger.error(f"SQL Server Execute Debug - Error during execution: {str(e)}")
             connection.rollback()
             raise e
         finally:
@@ -323,6 +329,12 @@ async def add_image_sqlserver(name: str, url: str, ai_labels: list, ai_text: lis
         ai_labels_json = json.dumps(ai_labels)
         ai_text_json = json.dumps(ai_text)
         
+        # Debug logging to track exact parameters
+        logger.info(f"SQL Server Insert Debug - Name: {name}")
+        logger.info(f"SQL Server Insert Debug - URL: {url}")
+        logger.info(f"SQL Server Insert Debug - AI Labels JSON: {ai_labels_json}")
+        logger.info(f"SQL Server Insert Debug - AI Text JSON: {ai_text_json}")
+        
         # Insert with all required columns, using NULL for optional fields
         # This matches the PostgreSQL table structure
         # Note: pytds uses %s placeholders, not ? placeholders
@@ -330,6 +342,10 @@ async def add_image_sqlserver(name: str, url: str, ai_labels: list, ai_text: lis
                    (name, width, height, url, url_resize, date_added, date_identified, ai_labels, ai_text) 
                    VALUES (%s, %s, %s, %s, %s, GETDATE(), %s, %s, %s)"""
         params = (name, None, None, url, None, None, ai_labels_json, ai_text_json)
+        
+        logger.info(f"SQL Server Insert Debug - Query: {query}")
+        logger.info(f"SQL Server Insert Debug - Params: {params}")
+        logger.info(f"SQL Server Insert Debug - Param count: {len(params)}")
         
         await execute_non_query_async(query, params)
         return {"message": f"Image {name} added successfully"}
@@ -357,3 +373,68 @@ async def delete_image_sqlserver(id: int):
     except Exception as err:
         logger.error(f"Error in delete_image_sqlserver: {err}", exc_info=True)
         return {"error": str(err)}
+
+
+async def test_sqlserver_connection():
+    """
+    Test SQL Server connection and basic operations for debugging.
+    
+    Returns:
+        dict: Test results with connection status and query tests
+    """
+    results = {
+        "connection": False,
+        "table_exists": False,
+        "simple_insert": False,
+        "parameter_test": False,
+        "errors": []
+    }
+    
+    try:
+        # Test connection
+        conn = get_connection()
+        if conn:
+            results["connection"] = True
+            logger.info("SQL Server connection test: SUCCESS")
+        else:
+            results["errors"].append("Failed to establish connection")
+            return results
+            
+        # Test table existence
+        try:
+            query = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = %s"
+            result = await execute_query_async(query, ("images",))
+            if result and result[0][0] > 0:
+                results["table_exists"] = True
+                logger.info("SQL Server table existence test: SUCCESS")
+            else:
+                results["errors"].append("Images table does not exist")
+        except Exception as e:
+            results["errors"].append(f"Table existence check failed: {str(e)}")
+            
+        # Test simple insert with minimal parameters
+        try:
+            test_query = "INSERT INTO images (name, ai_labels, ai_text) VALUES (%s, %s, %s)"
+            test_params = ("test_image.jpg", "[]", "[]")
+            await execute_non_query_async(test_query, test_params)
+            results["simple_insert"] = True
+            logger.info("SQL Server simple insert test: SUCCESS")
+        except Exception as e:
+            results["errors"].append(f"Simple insert failed: {str(e)}")
+            
+        # Test complex parameter formatting
+        try:
+            complex_query = """INSERT INTO images 
+                             (name, width, height, url, url_resize, date_added, date_identified, ai_labels, ai_text) 
+                             VALUES (%s, %s, %s, %s, %s, GETDATE(), %s, %s, %s)"""
+            complex_params = ("complex_test.jpg", None, None, "https://test.com/test.jpg", None, None, '["test"]', '["text"]')
+            await execute_non_query_async(complex_query, complex_params)
+            results["parameter_test"] = True
+            logger.info("SQL Server complex parameter test: SUCCESS")
+        except Exception as e:
+            results["errors"].append(f"Complex parameter test failed: {str(e)}")
+            
+    except Exception as e:
+        results["errors"].append(f"Connection test failed: {str(e)}")
+        
+    return results

@@ -573,6 +573,33 @@ async def health_check():
         "environment": os.getenv('DD_ENV', 'dev')
     }
 
+
+@app.get("/test-sqlserver")
+async def test_sqlserver_debug():
+    """
+    Test SQL Server connection and operations for debugging.
+    
+    Returns:
+        dict: Detailed test results for SQL Server connectivity and operations.
+    """
+    logger.info("Starting SQL Server debug test")
+    try:
+        test_results = await test_sqlserver_connection()
+        logger.info(f"SQL Server debug test completed: {test_results}")
+        return {
+            "test_type": "sqlserver_debug",
+            "timestamp": "2025-01-11T00:00:00Z",
+            "results": test_results
+        }
+    except Exception as e:
+        logger.error(f"SQL Server debug test failed: {str(e)}", exc_info=True)
+        return {
+            "test_type": "sqlserver_debug",
+            "timestamp": "2025-01-11T00:00:00Z",
+            "error": str(e),
+            "results": {"connection": False, "errors": [str(e)]}
+        }
+
 @app.get("/timeout-test")
 @tracer.wrap()
 async def timeout_test(timeout: int = 0):
