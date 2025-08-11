@@ -55,17 +55,18 @@ The application automatically creates the required table and indexes on first co
 
 ### Issue 1: "not all arguments converted during string formatting"
 
-**Cause**: This error occurs when the SQL Server table schema doesn't match the expected structure or the table doesn't exist.
+**Cause**: This error occurs because pytds (python-tds) uses `%s` parameter placeholders, not `?` placeholders like SQLite.
 
 **Solution**: 
+- Updated all SQL queries to use `%s` placeholders instead of `?`
 - The application now automatically creates the table with proper schema
 - Insert query updated to include all required columns with proper defaults
-- Fixed in commit: [current]
 
 **Technical Details**: 
-- Previous insert query only specified 4 columns: `name, url, ai_labels, ai_text`
-- Full schema requires 9 columns with proper NULL handling
-- Updated query: `INSERT INTO images (name, width, height, url, url_resize, date_added, date_identified, ai_labels, ai_text) VALUES (...)`
+- **Root Cause**: pytds uses DB-API 2.0 standard with `%s` placeholders
+- **Previous**: `VALUES (?, ?, ?, ?, ?, GETDATE(), ?, ?, ?)` - caused formatting error
+- **Fixed**: `VALUES (%s, %s, %s, %s, %s, GETDATE(), %s, %s, %s)` - proper pytds syntax
+- All SELECT and DELETE queries also updated to use `%s` placeholders
 
 ### Issue 2: Missing Environment Variables in Container
 

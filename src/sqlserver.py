@@ -225,7 +225,7 @@ async def get_image_sqlserver(id: int):
         ImageModel: The image data as an ImageModel instance.
     """
     try:
-        query = "SELECT id, name, width, height, url, url_resize, date_added, date_identified, ai_labels, ai_text FROM images WHERE id = ?"
+        query = "SELECT id, name, width, height, url, url_resize, date_added, date_identified, ai_labels, ai_text FROM images WHERE id = %s"
         result = await execute_query_async(query, (id,))
         
         if not result:
@@ -325,9 +325,10 @@ async def add_image_sqlserver(name: str, url: str, ai_labels: list, ai_text: lis
         
         # Insert with all required columns, using NULL for optional fields
         # This matches the PostgreSQL table structure
+        # Note: pytds uses %s placeholders, not ? placeholders
         query = """INSERT INTO images 
                    (name, width, height, url, url_resize, date_added, date_identified, ai_labels, ai_text) 
-                   VALUES (?, ?, ?, ?, ?, GETDATE(), ?, ?, ?)"""
+                   VALUES (%s, %s, %s, %s, %s, GETDATE(), %s, %s, %s)"""
         params = (name, None, None, url, None, None, ai_labels_json, ai_text_json)
         
         await execute_non_query_async(query, params)
@@ -346,7 +347,7 @@ async def delete_image_sqlserver(id: int):
         id (int): The ID of the image to delete.
     """
     try:
-        query = "DELETE FROM images WHERE id = ?"
+        query = "DELETE FROM images WHERE id = %s"
         rows_affected = await execute_non_query_async(query, (id,))
         
         if rows_affected == 0:
