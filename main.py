@@ -16,6 +16,7 @@ logger.info("Logging configured.")
 os.environ["DD_LLMOBS_ML_APP"] = "youtube-summarizer"
 os.environ["DD_LLMOBS_EVALUATORS"] = "ragas_faithfulness,ragas_context_precision,ragas_answer_relevancy"
 
+#Logger Info
 logger.info(f"Set LLM Observability app name: {os.environ['DD_LLMOBS_ML_APP']}")
 logger.info(f"Set LLM Observability evaluators: {os.environ['DD_LLMOBS_EVALUATORS']}")
 
