@@ -72,11 +72,69 @@ def get_connection():
             # Configure the connection with the proper service name for Database Monitoring
             Pin.override(conn, service="sqlserver")
             logger.info(f"Successfully connected to SQL Server database: {SQLSERVER_DB} at {SQLSERVER_HOST}:{SQLSERVER_PORT}")
+            
+            # Ensure the images table exists
+            ensure_table_exists()
+            
         return conn
     except Exception as e:
         logger.error(f"Error connecting to SQL Server: {e}", exc_info=True)
         conn = None
         return None
+
+
+def ensure_table_exists():
+    """Ensure the images table exists with proper schema."""
+    global conn
+    if conn is None:
+        return
+        
+    cursor = conn.cursor()
+    try:
+        # Check if table exists
+        cursor.execute("""
+            SELECT COUNT(*) 
+            FROM INFORMATION_SCHEMA.TABLES 
+            WHERE TABLE_NAME = 'images'
+        """)
+        table_exists = cursor.fetchone()[0] > 0
+        
+        if not table_exists:
+            logger.info("Creating images table in SQL Server...")
+            
+            # Create table with schema matching PostgreSQL
+            create_table_sql = """
+            CREATE TABLE images (
+                id INT IDENTITY(1,1) PRIMARY KEY,
+                name NVARCHAR(255) NOT NULL,
+                width INT NULL,
+                height INT NULL,
+                url NVARCHAR(500) NULL,
+                url_resize NVARCHAR(500) NULL,
+                date_added DATE NULL DEFAULT GETDATE(),
+                date_identified DATE NULL,
+                ai_labels NVARCHAR(MAX) NULL,
+                ai_text NVARCHAR(MAX) NULL
+            )
+            """
+            
+            cursor.execute(create_table_sql)
+            
+            # Create indexes
+            cursor.execute("CREATE INDEX IX_images_name ON images(name)")
+            cursor.execute("CREATE INDEX IX_images_date_added ON images(date_added DESC)")
+            cursor.execute("CREATE INDEX IX_images_date_identified ON images(date_identified DESC)")
+            
+            conn.commit()
+            logger.info("Successfully created images table and indexes in SQL Server")
+        else:
+            logger.debug("Images table already exists in SQL Server")
+            
+    except Exception as e:
+        logger.error(f"Error ensuring table exists: {e}", exc_info=True)
+        conn.rollback()
+    finally:
+        cursor.close()
 
 # Initialize connection on module load
 if PYTDS_AVAILABLE:
@@ -265,8 +323,12 @@ async def add_image_sqlserver(name: str, url: str, ai_labels: list, ai_text: lis
         ai_labels_json = json.dumps(ai_labels)
         ai_text_json = json.dumps(ai_text)
         
-        query = "INSERT INTO images (name, url, ai_labels, ai_text) VALUES (?, ?, ?, ?)"
-        params = (name, url, ai_labels_json, ai_text_json)
+        # Insert with all required columns, using NULL for optional fields
+        # This matches the PostgreSQL table structure
+        query = """INSERT INTO images 
+                   (name, width, height, url, url_resize, date_added, date_identified, ai_labels, ai_text) 
+                   VALUES (?, ?, ?, ?, ?, GETDATE(), ?, ?, ?)"""
+        params = (name, None, None, url, None, None, ai_labels_json, ai_text_json)
         
         await execute_non_query_async(query, params)
         return {"message": f"Image {name} added successfully"}
