@@ -108,6 +108,7 @@ curl -X POST "https://api-images.quickstark.com/add_image?backend=sqlserver" -F 
 
 ## Logging and Monitoring
 
+### Application Logging
 SQL Server operations are logged with appropriate levels:
 
 ```python
@@ -120,6 +121,46 @@ logger.debug("Adding image to SQL Server - AI Labels: {ai_labels}")
 # Error conditions
 logger.error("Error in add_image_sqlserver: {err}", exc_info=True)
 ```
+
+### Datadog Database Monitoring & APM
+
+**Issue**: pytds (python-tds) is not automatically instrumented by ddtrace, unlike psycopg for PostgreSQL.
+
+**Solution**: Manual tracing implementation for complete observability:
+
+#### Database Operation Spans
+```python
+# Each SQL query creates a database span
+with tracer.trace("sqlserver.query", service="sqlserver") as span:
+    span.set_tag("db.type", "sqlserver")
+    span.set_tag("db.statement", query)
+    span.set_tag("db.name", SQLSERVER_DB)
+    span.set_tag("db.host", SQLSERVER_HOST)
+    span.set_tag("db.port", SQLSERVER_PORT)
+    span.set_tag("db.rows_affected", rowcount)
+```
+
+#### Function-Level Tracing
+```python
+@tracer.wrap(service="sqlserver", resource="add_image")
+async def add_image_sqlserver(name: str, url: str, ai_labels: list, ai_text: list):
+    # Function creates a span with proper service and resource tagging
+    span = tracer.current_span()
+    if span:
+        span.set_tag("image.name", name)
+        span.set_tag("image.labels_count", len(ai_labels))
+```
+
+#### What You'll See in Datadog:
+- **APM Traces**: Complete request traces showing SQL Server operations within endpoint spans
+- **Database Monitoring**: Individual SQL queries with execution times and parameters  
+- **Service Map**: SQL Server service connections and dependencies
+- **Performance Metrics**: Query performance, connection pooling, error rates
+
+#### Comparison with PostgreSQL:
+- **PostgreSQL**: Automatic instrumentation via `patch_all(psycopg=True)`
+- **SQL Server**: Manual instrumentation via `@tracer.wrap()` decorators and database spans
+- **Result**: Both provide identical Datadog observability coverage
 
 ## Security Considerations
 

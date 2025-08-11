@@ -23,6 +23,7 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, Response, encoders
 from pydantic import BaseModel
 from ddtrace.trace import Pin
+from ddtrace import tracer
 import logging
 
 # Set up logging
@@ -182,12 +183,27 @@ async def execute_query_async(query: str, params: tuple = None):
         if connection is None:
             raise Exception("Failed to get SQL Server connection")
         
-        cursor = connection.cursor()
-        try:
-            cursor.execute(query, params or ())
-            return cursor.fetchall()
-        finally:
-            cursor.close()
+        # Create database span for monitoring
+        with tracer.trace("sqlserver.query", service="sqlserver") as span:
+            span.set_tag("db.type", "sqlserver")
+            span.set_tag("db.statement", query)
+            span.set_tag("db.name", SQLSERVER_DB)
+            span.set_tag("db.host", SQLSERVER_HOST)
+            span.set_tag("db.port", SQLSERVER_PORT)
+            
+            cursor = connection.cursor()
+            try:
+                cursor.execute(query, params or ())
+                result = cursor.fetchall()
+                span.set_tag("db.rows_affected", len(result) if result else 0)
+                return result
+            except Exception as e:
+                span.set_traceback()
+                span.set_tag("error", True)
+                span.set_tag("error.message", str(e))
+                raise e
+            finally:
+                cursor.close()
     
     return await asyncio.get_event_loop().run_in_executor(executor, _execute)
 
@@ -199,27 +215,42 @@ async def execute_non_query_async(query: str, params: tuple = None):
         if connection is None:
             raise Exception("Failed to get SQL Server connection")
         
-        cursor = connection.cursor()
-        try:
-            logger.info(f"SQL Server Execute Debug - About to execute query with {len(params or ())} parameters")
-            logger.info(f"SQL Server Execute Debug - Query: {query}")
-            logger.info(f"SQL Server Execute Debug - Params: {params}")
+        # Create database span for monitoring
+        with tracer.trace("sqlserver.execute", service="sqlserver") as span:
+            span.set_tag("db.type", "sqlserver")
+            span.set_tag("db.statement", query)
+            span.set_tag("db.name", SQLSERVER_DB)
+            span.set_tag("db.host", SQLSERVER_HOST)
+            span.set_tag("db.port", SQLSERVER_PORT)
             
-            cursor.execute(query, params or ())
-            connection.commit()
-            logger.info(f"SQL Server Execute Debug - Query executed successfully, {cursor.rowcount} rows affected")
-            return cursor.rowcount
-        except Exception as e:
-            logger.error(f"SQL Server Execute Debug - Error during execution: {str(e)}")
-            connection.rollback()
-            raise e
-        finally:
-            cursor.close()
+            cursor = connection.cursor()
+            try:
+                logger.info(f"SQL Server Execute Debug - About to execute query with {len(params or ())} parameters")
+                logger.info(f"SQL Server Execute Debug - Query: {query}")
+                logger.info(f"SQL Server Execute Debug - Params: {params}")
+                
+                cursor.execute(query, params or ())
+                connection.commit()
+                rowcount = cursor.rowcount
+                
+                span.set_tag("db.rows_affected", rowcount)
+                logger.info(f"SQL Server Execute Debug - Query executed successfully, {rowcount} rows affected")
+                return rowcount
+            except Exception as e:
+                span.set_traceback()
+                span.set_tag("error", True)
+                span.set_tag("error.message", str(e))
+                logger.error(f"SQL Server Execute Debug - Error during execution: {str(e)}")
+                connection.rollback()
+                raise e
+            finally:
+                cursor.close()
     
     return await asyncio.get_event_loop().run_in_executor(executor, _execute)
 
 
 @router_sqlserver.get("/get-image-sqlserver/{id}", response_model=ImageModel, response_model_exclude_unset=True)
+@tracer.wrap(service="sqlserver", resource="get_image")
 async def get_image_sqlserver(id: int):
     """
     Fetch a single image from the SQL Server database.
@@ -263,6 +294,7 @@ async def get_image_sqlserver(id: int):
         return {"error": str(err)}
 
 
+@tracer.wrap(service="sqlserver", resource="get_all_images")
 async def get_all_images_sqlserver(response_model=List[ImageModel]):
     """
     Fetch all images from the SQL Server database.
@@ -298,9 +330,15 @@ async def get_all_images_sqlserver(response_model=List[ImageModel]):
     except Exception as err:
         logger.error(f"Error in get_all_images_sqlserver: {err}", exc_info=True)
     
+    # Add span tags for monitoring
+    span = tracer.current_span()
+    if span:
+        span.set_tag("images.count", len(formatted_photos))
+    
     return formatted_photos
 
 
+@tracer.wrap(service="sqlserver", resource="add_image")
 async def add_image_sqlserver(name: str, url: str, ai_labels: list, ai_text: list):
     """
     Add an image and its metadata to the SQL Server database.
@@ -347,6 +385,14 @@ async def add_image_sqlserver(name: str, url: str, ai_labels: list, ai_text: lis
         logger.info(f"SQL Server Insert Debug - Params: {params}")
         logger.info(f"SQL Server Insert Debug - Param count: {len(params)}")
         
+        # Add span tags for monitoring
+        span = tracer.current_span()
+        if span:
+            span.set_tag("image.name", name)
+            span.set_tag("image.url", url)
+            span.set_tag("image.labels_count", len(ai_labels))
+            span.set_tag("image.text_count", len(ai_text))
+        
         await execute_non_query_async(query, params)
         return {"message": f"Image {name} added successfully"}
         
@@ -355,6 +401,7 @@ async def add_image_sqlserver(name: str, url: str, ai_labels: list, ai_text: lis
         return {"error": str(err)}
 
 
+@tracer.wrap(service="sqlserver", resource="delete_image")
 async def delete_image_sqlserver(id: int):
     """
     Delete an image from the SQL Server database.
@@ -375,6 +422,7 @@ async def delete_image_sqlserver(id: int):
         return {"error": str(err)}
 
 
+@tracer.wrap(service="sqlserver", resource="test_connection")
 async def test_sqlserver_connection():
     """
     Test SQL Server connection and basic operations for debugging.
