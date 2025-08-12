@@ -128,28 +128,34 @@ logger.error("Error in add_image_sqlserver: {err}", exc_info=True)
 
 **Solution**: Manual tracing implementation for complete observability:
 
-#### Database Operation Spans
+#### Database Operation Spans (DBM Correlation)
 ```python
-# Each SQL query creates a database span
-with tracer.trace("sqlserver.query", service="sqlserver") as span:
-    span.set_tag("db.type", "sqlserver")
-    span.set_tag("db.statement", query)
-    span.set_tag("db.name", SQLSERVER_DB)
-    span.set_tag("db.host", SQLSERVER_HOST)
-    span.set_tag("db.port", SQLSERVER_PORT)
-    span.set_tag("db.rows_affected", rowcount)
+# Each SQL query creates a database span with proper DBM correlation attributes
+with tracer.trace("db.query", service="sqlserver", resource=query[:100]) as span:
+    span.set_tag("@peer.db.system", "sqlserver")     # Required for DBM correlation
+    span.set_tag("@peer.db.name", SQLSERVER_DB)      # Database name for correlation
+    span.set_tag("db.statement", query)              # Full SQL statement
+    span.set_tag("db.host", SQLSERVER_HOST)          # Database host
+    span.set_tag("db.port", SQLSERVER_PORT)          # Database port
+    span.set_tag("db.rows_affected", rowcount)       # Query result metadata
 ```
 
 #### Function-Level Tracing
 ```python
-@tracer.wrap(service="sqlserver", resource="add_image")
+@tracer.wrap(service="sqlserver", resource="sqlserver.add_image")
 async def add_image_sqlserver(name: str, url: str, ai_labels: list, ai_text: list):
-    # Function creates a span with proper service and resource tagging
+    # Function creates a span with descriptive resource naming
     span = tracer.current_span()
     if span:
         span.set_tag("image.name", name)
         span.set_tag("image.labels_count", len(ai_labels))
 ```
+
+#### Critical DBM Correlation Requirements
+- **Operation Name**: Must use `db.query` (not `sqlserver.query`) for DBM recognition
+- **Resource Name**: Include query excerpt as resource for query identification  
+- **Peer Database Tags**: Use `@peer.db.system` and `@peer.db.name` for correlation
+- **Service Consistency**: Use consistent service name across spans and connection Pin
 
 #### What You'll See in Datadog:
 - **APM Traces**: Complete request traces showing SQL Server operations within endpoint spans
@@ -159,8 +165,20 @@ async def add_image_sqlserver(name: str, url: str, ai_labels: list, ai_text: lis
 
 #### Comparison with PostgreSQL:
 - **PostgreSQL**: Automatic instrumentation via `patch_all(psycopg=True)`
-- **SQL Server**: Manual instrumentation via `@tracer.wrap()` decorators and database spans
+  - Auto-generates `db.query` spans with correct DBM correlation attributes
+  - Uses reserved attributes (`trace_id`, `service`, `resource_name`) automatically
+  - Seamless APM-to-DBM correlation out of the box
+
+- **SQL Server**: Manual instrumentation matching auto-instrumentation patterns
+  - `@tracer.wrap()` decorators for function-level spans
+  - Manual `db.query` spans with `@peer.db.*` correlation tags
+  - Explicit resource naming and service consistency
+  - Achieves identical DBM correlation through manual implementation
+
 - **Result**: Both provide identical Datadog observability coverage
+  - APM traces with nested database spans
+  - Database Monitoring with query-to-trace correlation
+  - Service map visibility and performance metrics
 
 ## Security Considerations
 
@@ -194,6 +212,7 @@ ALTER TABLE images ADD height INT NULL;
 
 ## Troubleshooting Checklist
 
+### Basic Functionality
 1. ✅ Environment variables configured correctly
 2. ✅ SQL Server accessible from application host  
 3. ✅ Database and user permissions configured
@@ -201,6 +220,28 @@ ALTER TABLE images ADD height INT NULL;
 5. ✅ Table schema matches expected structure
 6. ✅ Network connectivity (ports, firewall)
 7. ✅ Container environment variables passed correctly
+
+### Datadog DBM Correlation Issues
+If SQL Server queries appear in APM traces but not in Database Monitoring:
+
+8. ✅ Verify span operation name is `db.query` (not `sqlserver.query`)
+9. ✅ Check `@peer.db.system` tag is set to `"sqlserver"`
+10. ✅ Confirm `@peer.db.name` tag matches actual database name
+11. ✅ Ensure service name consistency between spans and Pin.override
+12. ✅ Validate resource name includes query excerpt for identification
+13. ✅ Check Datadog agent has Database Monitoring enabled
+14. ✅ Verify `db.statement` contains full SQL query text
+
+### Debugging DBM Correlation
+```bash
+# Check APM traces for proper database spans
+curl "https://api-images.quickstark.com/add_image?backend=sqlserver" -F "file=@test.jpg"
+
+# In Datadog APM, look for:
+# - Service: "sqlserver" 
+# - Operation: "db.query"
+# - Tags: "@peer.db.system:sqlserver", "@peer.db.name:images"
+```
 
 ## Contact and Support
 

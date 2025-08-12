@@ -183,11 +183,11 @@ async def execute_query_async(query: str, params: tuple = None):
         if connection is None:
             raise Exception("Failed to get SQL Server connection")
         
-        # Create database span for monitoring
-        with tracer.trace("sqlserver.query", service="sqlserver") as span:
-            span.set_tag("db.type", "sqlserver")
+        # Create database span for DBM correlation
+        with tracer.trace("db.query", service="sqlserver", resource=query[:100]) as span:
+            span.set_tag("@peer.db.system", "sqlserver")
+            span.set_tag("@peer.db.name", SQLSERVER_DB)
             span.set_tag("db.statement", query)
-            span.set_tag("db.name", SQLSERVER_DB)
             span.set_tag("db.host", SQLSERVER_HOST)
             span.set_tag("db.port", SQLSERVER_PORT)
             
@@ -215,11 +215,11 @@ async def execute_non_query_async(query: str, params: tuple = None):
         if connection is None:
             raise Exception("Failed to get SQL Server connection")
         
-        # Create database span for monitoring
-        with tracer.trace("sqlserver.execute", service="sqlserver") as span:
-            span.set_tag("db.type", "sqlserver")
+        # Create database span for DBM correlation
+        with tracer.trace("db.query", service="sqlserver", resource=query[:100]) as span:
+            span.set_tag("@peer.db.system", "sqlserver")
+            span.set_tag("@peer.db.name", SQLSERVER_DB)
             span.set_tag("db.statement", query)
-            span.set_tag("db.name", SQLSERVER_DB)
             span.set_tag("db.host", SQLSERVER_HOST)
             span.set_tag("db.port", SQLSERVER_PORT)
             
@@ -250,7 +250,7 @@ async def execute_non_query_async(query: str, params: tuple = None):
 
 
 @router_sqlserver.get("/get-image-sqlserver/{id}", response_model=ImageModel, response_model_exclude_unset=True)
-@tracer.wrap(service="sqlserver", resource="get_image")
+@tracer.wrap(service="sqlserver", resource="sqlserver.get_image")
 async def get_image_sqlserver(id: int):
     """
     Fetch a single image from the SQL Server database.
@@ -294,7 +294,7 @@ async def get_image_sqlserver(id: int):
         return {"error": str(err)}
 
 
-@tracer.wrap(service="sqlserver", resource="get_all_images")
+@tracer.wrap(service="sqlserver", resource="sqlserver.get_all_images")
 async def get_all_images_sqlserver(response_model=List[ImageModel]):
     """
     Fetch all images from the SQL Server database.
@@ -338,7 +338,7 @@ async def get_all_images_sqlserver(response_model=List[ImageModel]):
     return formatted_photos
 
 
-@tracer.wrap(service="sqlserver", resource="add_image")
+@tracer.wrap(service="sqlserver", resource="sqlserver.add_image")
 async def add_image_sqlserver(name: str, url: str, ai_labels: list, ai_text: list):
     """
     Add an image and its metadata to the SQL Server database.
@@ -401,7 +401,7 @@ async def add_image_sqlserver(name: str, url: str, ai_labels: list, ai_text: lis
         return {"error": str(err)}
 
 
-@tracer.wrap(service="sqlserver", resource="delete_image")
+@tracer.wrap(service="sqlserver", resource="sqlserver.delete_image")
 async def delete_image_sqlserver(id: int):
     """
     Delete an image from the SQL Server database.
@@ -422,7 +422,7 @@ async def delete_image_sqlserver(id: int):
         return {"error": str(err)}
 
 
-@tracer.wrap(service="sqlserver", resource="test_connection")
+@tracer.wrap(service="sqlserver", resource="sqlserver.test_connection")
 async def test_sqlserver_connection():
     """
     Test SQL Server connection and basic operations for debugging.
