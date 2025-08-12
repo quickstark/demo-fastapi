@@ -98,6 +98,7 @@ jobs:
           port: ${{ secrets.SYNOLOGY_SSH_PORT }}
           username: ${{ secrets.SYNOLOGY_USER }}
           key: ${{ secrets.SYNOLOGY_SSH_KEY }}
+          passphrase: ${{ secrets.SYNOLOGY_SSH_PASSPHRASE }}
           script: |
             # Debug: Check current user and environment
             echo "Current user: $(whoami)"
