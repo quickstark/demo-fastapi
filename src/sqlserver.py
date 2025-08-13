@@ -49,7 +49,10 @@ CONNECTION_PARAMS = {
     'user': SQLSERVER_USER,
     'password': SQLSERVER_PW,
     'timeout': 30,
-    'login_timeout': 30
+    'login_timeout': 30,
+    # Add connection resilience options
+    'autocommit': False,  # Explicit transaction control
+    'readonly': False,
     # Note: tds_version auto-negotiated by default (best practice)
 }
 
@@ -60,14 +63,37 @@ executor = ThreadPoolExecutor(max_workers=10)
 conn = None
 
 def get_connection():
-    """Get or create SQL Server connection."""
+    """Get or create SQL Server connection with improved error handling."""
     if not PYTDS_AVAILABLE:
         logger.error("pytds is not available. SQL Server connection cannot be established.")
         return None
         
     global conn
     try:
-        if conn is None or (hasattr(conn, 'is_connected') and not conn.is_connected()):
+        # More robust connection validation - check for None, closed state, and test with a simple query
+        needs_reconnect = False
+        
+        if conn is None:
+            needs_reconnect = True
+            logger.info("SQL Server connection is None, establishing new connection")
+        else:
+            # Check if connection is still alive by testing it
+            try:
+                # Test connection with a simple query
+                test_cursor = conn.cursor()
+                test_cursor.execute("SELECT 1")
+                test_cursor.fetchone()
+                test_cursor.close()
+            except Exception as test_error:
+                logger.warning(f"SQL Server connection test failed: {test_error}. Reconnecting...")
+                needs_reconnect = True
+                try:
+                    conn.close()
+                except:
+                    pass  # Ignore errors when closing potentially broken connection
+                conn = None
+        
+        if needs_reconnect:
             logger.info(f"Attempting to connect to SQL Server: server={SQLSERVER_HOST}:{SQLSERVER_PORT} database={SQLSERVER_DB} user={SQLSERVER_USER}")
             conn = pytds.connect(**CONNECTION_PARAMS)
             # Configure the connection with the proper service name for Database Monitoring
@@ -177,74 +203,142 @@ class ImageModel(BaseModel):
 
 
 async def execute_query_async(query: str, params: tuple = None):
-    """Execute SELECT query asynchronously using thread pool."""
+    """Execute SELECT query asynchronously using thread pool with retry logic."""
     def _execute():
-        connection = get_connection()
-        if connection is None:
-            raise Exception("Failed to get SQL Server connection")
+        max_retries = 2
+        retry_count = 0
         
-        # Create database span for DBM correlation
-        with tracer.trace("db.query", service="sqlserver", resource=query[:100]) as span:
-            span.set_tag("@peer.db.system", "sqlserver")
-            span.set_tag("@peer.db.name", SQLSERVER_DB)
-            span.set_tag("db.statement", query)
-            span.set_tag("db.host", SQLSERVER_HOST)
-            span.set_tag("db.port", SQLSERVER_PORT)
+        while retry_count <= max_retries:
+            connection = get_connection()
+            if connection is None:
+                raise Exception("Failed to get SQL Server connection")
             
-            cursor = connection.cursor()
-            try:
-                cursor.execute(query, params or ())
-                result = cursor.fetchall()
-                span.set_tag("db.rows_affected", len(result) if result else 0)
-                return result
-            except Exception as e:
-                span.set_traceback()
-                span.set_tag("error", True)
-                span.set_tag("error.message", str(e))
-                raise e
-            finally:
-                cursor.close()
+            # Create database span for DBM correlation
+            with tracer.trace("db.query", service="sqlserver", resource=query[:100]) as span:
+                # Core DBM tags for correlation (following Datadog DBM standards)
+                span.set_tag("@peer.db.system", "sqlserver")
+                span.set_tag("@peer.db.name", SQLSERVER_DB)
+                span.set_tag("@peer.hostname", SQLSERVER_HOST)
+                span.set_tag("@peer.port", SQLSERVER_PORT)
+                
+                # Additional database tags for better correlation
+                span.set_tag("db.statement", query)
+                span.set_tag("db.host", SQLSERVER_HOST)
+                span.set_tag("db.port", SQLSERVER_PORT)
+                span.set_tag("db.type", "sqlserver")
+                span.set_tag("db.instance", SQLSERVER_DB)
+                span.set_tag("db.user", SQLSERVER_USER)
+                
+                # Add span kind for better DBM correlation
+                span.set_tag("span.kind", "client")
+                span.set_tag("component", "sqlserver")
+                span.set_tag("retry.attempt", retry_count)
+                
+                cursor = connection.cursor()
+                try:
+                    cursor.execute(query, params or ())
+                    result = cursor.fetchall()
+                    span.set_tag("db.rows_affected", len(result) if result else 0)
+                    return result
+                except Exception as e:
+                    span.set_traceback()
+                    span.set_tag("error", True)
+                    span.set_tag("error.message", str(e))
+                    
+                    # Check if this is a connection-related error that we can retry
+                    error_str = str(e).lower()
+                    is_connection_error = any(err in error_str for err in [
+                        'broken pipe', 'connection', 'timeout', 'network', 'socket'
+                    ])
+                    
+                    if is_connection_error and retry_count < max_retries:
+                        logger.warning(f"SQL Server query failed with connection error (attempt {retry_count + 1}/{max_retries + 1}): {e}")
+                        # Force reconnection on next attempt
+                        global conn
+                        conn = None
+                        retry_count += 1
+                        continue
+                    else:
+                        raise e
+                finally:
+                    cursor.close()
     
     return await asyncio.get_event_loop().run_in_executor(executor, _execute)
 
 
 async def execute_non_query_async(query: str, params: tuple = None):
-    """Execute INSERT/UPDATE/DELETE query asynchronously using thread pool."""
+    """Execute INSERT/UPDATE/DELETE query asynchronously using thread pool with retry logic."""
     def _execute():
-        connection = get_connection()
-        if connection is None:
-            raise Exception("Failed to get SQL Server connection")
+        max_retries = 2
+        retry_count = 0
         
-        # Create database span for DBM correlation
-        with tracer.trace("db.query", service="sqlserver", resource=query[:100]) as span:
-            span.set_tag("@peer.db.system", "sqlserver")
-            span.set_tag("@peer.db.name", SQLSERVER_DB)
-            span.set_tag("db.statement", query)
-            span.set_tag("db.host", SQLSERVER_HOST)
-            span.set_tag("db.port", SQLSERVER_PORT)
+        while retry_count <= max_retries:
+            connection = get_connection()
+            if connection is None:
+                raise Exception("Failed to get SQL Server connection")
             
-            cursor = connection.cursor()
-            try:
-                logger.info(f"SQL Server Execute Debug - About to execute query with {len(params or ())} parameters")
-                logger.info(f"SQL Server Execute Debug - Query: {query}")
-                logger.info(f"SQL Server Execute Debug - Params: {params}")
+            # Create database span for DBM correlation
+            with tracer.trace("db.query", service="sqlserver", resource=query[:100]) as span:
+                # Core DBM tags for correlation (following Datadog DBM standards)
+                span.set_tag("@peer.db.system", "sqlserver")
+                span.set_tag("@peer.db.name", SQLSERVER_DB)
+                span.set_tag("@peer.hostname", SQLSERVER_HOST)
+                span.set_tag("@peer.port", SQLSERVER_PORT)
                 
-                cursor.execute(query, params or ())
-                connection.commit()
-                rowcount = cursor.rowcount
+                # Additional database tags for better correlation
+                span.set_tag("db.statement", query)
+                span.set_tag("db.host", SQLSERVER_HOST)
+                span.set_tag("db.port", SQLSERVER_PORT)
+                span.set_tag("db.type", "sqlserver")
+                span.set_tag("db.instance", SQLSERVER_DB)
+                span.set_tag("db.user", SQLSERVER_USER)
                 
-                span.set_tag("db.rows_affected", rowcount)
-                logger.info(f"SQL Server Execute Debug - Query executed successfully, {rowcount} rows affected")
-                return rowcount
-            except Exception as e:
-                span.set_traceback()
-                span.set_tag("error", True)
-                span.set_tag("error.message", str(e))
-                logger.error(f"SQL Server Execute Debug - Error during execution: {str(e)}")
-                connection.rollback()
-                raise e
-            finally:
-                cursor.close()
+                # Add span kind for better DBM correlation
+                span.set_tag("span.kind", "client")
+                span.set_tag("component", "sqlserver")
+                span.set_tag("retry.attempt", retry_count)
+                
+                cursor = connection.cursor()
+                try:
+                    logger.info(f"SQL Server Execute Debug - About to execute query with {len(params or ())} parameters")
+                    logger.info(f"SQL Server Execute Debug - Query: {query}")
+                    logger.info(f"SQL Server Execute Debug - Params: {params}")
+                    
+                    cursor.execute(query, params or ())
+                    connection.commit()
+                    rowcount = cursor.rowcount
+                    
+                    span.set_tag("db.rows_affected", rowcount)
+                    logger.info(f"SQL Server Execute Debug - Query executed successfully, {rowcount} rows affected")
+                    return rowcount
+                except Exception as e:
+                    span.set_traceback()
+                    span.set_tag("error", True)
+                    span.set_tag("error.message", str(e))
+                    logger.error(f"SQL Server Execute Debug - Error during execution: {str(e)}")
+                    
+                    try:
+                        connection.rollback()
+                    except:
+                        pass  # Connection might be broken, ignore rollback errors
+                    
+                    # Check if this is a connection-related error that we can retry
+                    error_str = str(e).lower()
+                    is_connection_error = any(err in error_str for err in [
+                        'broken pipe', 'connection', 'timeout', 'network', 'socket'
+                    ])
+                    
+                    if is_connection_error and retry_count < max_retries:
+                        logger.warning(f"SQL Server non-query failed with connection error (attempt {retry_count + 1}/{max_retries + 1}): {e}")
+                        # Force reconnection on next attempt
+                        global conn
+                        conn = None
+                        retry_count += 1
+                        continue
+                    else:
+                        raise e
+                finally:
+                    cursor.close()
     
     return await asyncio.get_event_loop().run_in_executor(executor, _execute)
 
