@@ -197,6 +197,7 @@ jobs:
               -e DD_VERSION="${{ secrets.DD_VERSION }}" \
               -e DD_PROFILING_ENABLED=true \
               -e DD_PROFILING_TIMELINE_ENABLED=true \
+              -e DD_DBM_PROPAGATION_MODE=full \
               -e PGHOST="${{ secrets.PGHOST }}" \
               -e PGPORT="${{ secrets.PGPORT }}" \
               -e PGDATABASE="${{ secrets.PGDATABASE }}" \
