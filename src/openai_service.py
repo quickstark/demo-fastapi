@@ -8,11 +8,12 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from ddtrace import tracer
 
 from openai import OpenAI
 from .services.youtube_service import get_video_id, get_youtube_transcript, generate_video_summary, process_youtube_video
+from .services.youtube_batch_service import YouTubeBatchProcessor, ProcessingStrategy, BatchProcessingResult
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -90,6 +91,22 @@ class YouTubeRequest(BaseModel):
     instructions: Optional[str] = None
     save_to_notion: Optional[bool] = False
 
+class BatchYouTubeRequest(BaseModel):
+    """Request model for batch YouTube video processing.
+    
+    Attributes:
+        urls (List[str]): List of YouTube video URLs to process.
+        strategy (str): Processing strategy - "sequential", "parallel_individual", "batch_combined", or "hybrid".
+        instructions (Optional[str]): Custom instructions for AI summarization.
+        save_to_notion (Optional[bool]): Whether to save results to Notion database.
+        max_parallel (int): Maximum number of parallel processing tasks (default: 3).
+    """
+    urls: List[str]
+    strategy: str = "parallel_individual"
+    instructions: Optional[str] = None
+    save_to_notion: Optional[bool] = False
+    max_parallel: int = 3
+
 @router_openai.post("/summarize-youtube")
 @tracer.wrap(service="openai-service", resource="summarize_youtube")
 async def summarize_youtube_video(request: YouTubeRequest):
@@ -147,4 +164,98 @@ async def summarize_youtube_video(request: YouTubeRequest):
     except Exception as e:
         # Log the full exception for debugging
         logger.error(f"Unexpected error in summarize_youtube_video: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
+@router_openai.post("/batch-summarize-youtube")
+@tracer.wrap(service="openai-service", resource="batch_summarize_youtube")
+async def batch_summarize_youtube_videos(request: BatchYouTubeRequest):
+    """Process multiple YouTube videos with various strategies.
+    
+    Supports different processing strategies to handle context window limitations:
+    - sequential: Process videos one by one (safest, slowest)
+    - parallel_individual: Process in parallel with individual summaries (recommended)
+    - batch_combined: Attempt combined analysis with chunking
+    - hybrid: Individual summaries + meta-summary
+    
+    Args:
+        request (BatchYouTubeRequest): Contains URLs, strategy, instructions, and preferences.
+    
+    Returns:
+        dict: Contains processing results, individual video data, and optional meta-summary.
+        
+    Raises:
+        HTTPException: If request validation fails or processing encounters errors.
+    """
+    try:
+        # Validate strategy
+        try:
+            strategy = ProcessingStrategy(request.strategy)
+        except ValueError:
+            valid_strategies = [s.value for s in ProcessingStrategy]
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid strategy '{request.strategy}'. Valid options: {valid_strategies}"
+            )
+        
+        # Validate URLs list
+        if not request.urls:
+            raise HTTPException(status_code=400, detail="URLs list cannot be empty")
+        
+        if len(request.urls) > 20:  # Reasonable limit
+            raise HTTPException(status_code=400, detail="Maximum 20 URLs allowed per batch request")
+        
+        # Validate max_parallel
+        if request.max_parallel < 1 or request.max_parallel > 10:
+            raise HTTPException(status_code=400, detail="max_parallel must be between 1 and 10")
+        
+        # Initialize batch processor
+        batch_processor = YouTubeBatchProcessor()
+        
+        # Process the batch
+        batch_result: BatchProcessingResult = await batch_processor.process_urls_batch(
+            urls=request.urls,
+            strategy=strategy,
+            instructions=request.instructions,
+            save_to_notion=request.save_to_notion,
+            max_parallel=request.max_parallel
+        )
+        
+        # Convert result to API response format
+        response_data = {
+            "strategy_used": batch_result.strategy_used.value,
+            "total_videos": batch_result.total_videos,
+            "successful_videos": batch_result.successful_videos,
+            "failed_videos": batch_result.failed_videos,
+            "processing_time": round(batch_result.total_processing_time, 2),
+            "results": [
+                {
+                    "url": result.url,
+                    "video_id": result.video_id,
+                    "title": result.title,
+                    "success": result.success,
+                    "summary": result.summary,
+                    "processing_time": round(result.processing_time, 2) if result.processing_time else None,
+                    "notion_page_id": result.notion_page_id,
+                    "error": result.error
+                }
+                for result in batch_result.results
+            ]
+        }
+        
+        # Add meta-summary if available
+        if batch_result.meta_summary:
+            response_data["meta_summary"] = batch_result.meta_summary
+        
+        # Add errors if any
+        if batch_result.errors:
+            response_data["errors"] = batch_result.errors
+        
+        return response_data
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Log the full exception for debugging
+        logger.error(f"Unexpected error in batch_summarize_youtube_videos: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}") 
