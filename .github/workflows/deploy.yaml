@@ -91,13 +91,13 @@ jobs:
       
       # Connect to Tailscale network to access GMKTec host
       - name: Connect to Tailscale
-        uses: tailscale/github-action@v2
+        uses: tailscale/github-action@v3
         if: steps.docker_build.outcome == 'success'
         with:
           oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
           tags: tag:ci
-          version: stable
+          use-cache: 'true'  # Cache Tailscale binaries for better performance
       
       - name: Deploy to GMKTec
         id: gmktec_deploy
@@ -108,7 +108,6 @@ jobs:
           port: 22  # Standard SSH port
           username: ${{ secrets.GMKTEC_USER }}
           key: ${{ secrets.GMKTEC_SSH_KEY }}
-          passphrase: ${{ secrets.GMKTEC_SSH_PASSPHRASE }}
           script: |
             # Debug: Check current user and environment
             echo "Current user: $(whoami)"

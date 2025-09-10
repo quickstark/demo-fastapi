@@ -38,10 +38,7 @@ sudo usermod -aG docker username
 1. **Create an OAuth API client** (recommended):
    - Go to https://tailscale.com/s/oauth-clients
    - Create a new OAuth client for GitHub Actions
-   - Grant the following scopes:
-     - `devices:read`
-     - `devices:write`
-     - `auth_keys:write`
+   - Grant the `auth_keys` scope (required for Tailscale GitHub Action v3)
    - Note the Client ID and Client Secret
    - These will be stored as two separate GitHub secrets:
      - `TAILSCALE_OAUTH_CLIENT_ID`
@@ -133,7 +130,7 @@ Add the following secrets to your GitHub repository (Settings → Secrets and va
 
 The GitHub Actions workflow has been updated with:
 
-1. **Tailscale OAuth Integration**: Uses OAuth client (not authkey) to connect to your Tailscale network
+1. **Tailscale OAuth Integration**: Uses OAuth client (not authkey) with Tailscale GitHub Action v3
 2. **Updated SSH Target**: Now connects to `100.66.93.87` (GMKTec via Tailscale)
 3. **Simplified Docker Detection**: Standard Linux Docker installation expected
 4. **Database Configuration**: Database hosts/ports updated via GitHub Secrets (not hardcoded)
