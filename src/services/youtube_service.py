@@ -8,6 +8,7 @@ import logging
 import asyncio
 from datetime import datetime
 from .notion_service import add_video_summary_to_notion, NotionVideoPayload
+from .youtube_transcript_fallback import get_transcript_with_fallback
 from pytube import YouTube
 import httpx
 import re
@@ -60,8 +61,14 @@ async def process_youtube_video(youtube_url: str, instructions: str = None, save
             None, lambda: get_youtube_transcript(video_id)
         )
         
+        # Try fallback transcript methods if primary method failed
         if "error" in transcript_result:
-            logger.error(f"Transcript error for video {video_id}: {transcript_result['error']}")
+            logger.warning(f"Primary transcript method failed for {video_id}: {transcript_result['error']}")
+            logger.info(f"Attempting fallback transcript extraction for {video_id}")
+            transcript_result = await get_transcript_with_fallback(video_id, transcript_result)
+        
+        if "error" in transcript_result:
+            logger.error(f"All transcript methods failed for video {video_id}: {transcript_result['error']}")
             return transcript_result
 
         # Generate summary - use AsyncOpenAI client
@@ -129,19 +136,52 @@ async def process_youtube_video(youtube_url: str, instructions: str = None, save
 
 @tracer.wrap(service="youtube-service", resource="get_video_id")
 def get_video_id(youtube_url: str) -> str:
-    """Extracts the video ID from a YouTube URL."""
+    """Extracts the video ID from a YouTube URL with enhanced URL format support."""
     try:
+        logger.info(f"Extracting video ID from URL: {youtube_url}")
+        
+        # Clean the URL first
+        youtube_url = youtube_url.strip()
+        
         parsed_url = urlparse(youtube_url)
-        if parsed_url.netloc in ('www.youtube.com', 'youtube.com', 'm.youtube.com', 'youtu.be'):
-            if parsed_url.netloc in ('youtu.be',):
-                return parsed_url.path[1:]
-            else:
-                query_params = parse_qs(parsed_url.query)
-                if 'v' in query_params:
-                    return query_params['v'][0]
+        logger.info(f"Parsed URL - netloc: {parsed_url.netloc}, path: {parsed_url.path}, query: {parsed_url.query}")
+        
+        # Handle different YouTube URL formats
+        if parsed_url.netloc in ('www.youtube.com', 'youtube.com', 'm.youtube.com'):
+            # Standard YouTube URLs: youtube.com/watch?v=VIDEO_ID
+            query_params = parse_qs(parsed_url.query)
+            if 'v' in query_params and query_params['v'][0]:
+                video_id = query_params['v'][0]
+                # Clean video ID of any additional parameters (like &si=...)
+                video_id = video_id.split('&')[0]  # Remove any additional params
+                logger.info(f"Extracted video ID from youtube.com: {video_id}")
+                return video_id
+                
+        elif parsed_url.netloc == 'youtu.be':
+            # Shortened URLs: youtu.be/VIDEO_ID
+            video_id = parsed_url.path[1:]  # Remove leading /
+            if video_id:
+                # Clean video ID of any additional parameters
+                video_id = video_id.split('?')[0]  # Remove query parameters
+                video_id = video_id.split('&')[0]  # Remove additional params
+                logger.info(f"Extracted video ID from youtu.be: {video_id}")
+                return video_id
+        
+        # Fallback: try to extract 11-character video ID using regex
+        import re
+        # YouTube video IDs are typically 11 characters long
+        video_id_pattern = r'(?:v=|/)([a-zA-Z0-9_-]{11})(?:\S+)?'
+        match = re.search(video_id_pattern, youtube_url)
+        if match:
+            video_id = match.group(1)
+            logger.info(f"Extracted video ID using regex fallback: {video_id}")
+            return video_id
+        
+        logger.warning(f"Could not extract video ID from URL: {youtube_url}")
         return None
+        
     except Exception as e:
-        logger.error(f"Error extracting video ID: {str(e)}")
+        logger.error(f"Error extracting video ID from {youtube_url}: {str(e)}", exc_info=True)
         return None
 
 @tracer.wrap(service="youtube-service", resource="get_youtube_video_details_pytube")
@@ -275,24 +315,109 @@ def get_youtube_metadata_fallback(youtube_url: str):
 
 @tracer.wrap(service="youtube-service", resource="get_youtube_transcript")
 def get_youtube_transcript(video_id: str):
-    """Retrieves the transcript for a YouTube video ID."""
+    """Retrieves the transcript for a YouTube video ID with enhanced error handling."""
     try:
-        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-        auto_transcript = transcript_list.find_transcript(['en', 'en-GB', 'en-US'])
-        transcript_parts = auto_transcript.fetch()
+        logger.info(f"Attempting to retrieve transcript for video ID: {video_id}")
         
-        full_transcript = " ".join(part['text'] for part in transcript_parts)
+        # Get list of available transcripts
+        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+        
+        # Log available transcripts for debugging
+        available_transcripts = []
+        for transcript in transcript_list:
+            available_transcripts.append({
+                'language': transcript.language,
+                'language_code': transcript.language_code,
+                'is_generated': transcript.is_generated,
+                'is_translatable': transcript.is_translatable
+            })
+        logger.info(f"Available transcripts for {video_id}: {available_transcripts}")
+        
+        # Try multiple strategies to get transcript
+        transcript = None
+        language_used = None
+        
+        # Strategy 1: Try exact English variants
+        for lang_code in ['en', 'en-US', 'en-GB', 'en-CA', 'en-AU']:
+            try:
+                transcript = transcript_list.find_transcript([lang_code])
+                language_used = lang_code
+                logger.info(f"Found transcript using language code: {lang_code}")
+                break
+            except NoTranscriptFound:
+                continue
+        
+        # Strategy 2: Try any English transcript (including auto-generated)
+        if not transcript:
+            try:
+                # Look for any transcript that starts with 'en'
+                for available_transcript in transcript_list:
+                    if available_transcript.language_code.startswith('en'):
+                        transcript = available_transcript
+                        language_used = available_transcript.language_code
+                        logger.info(f"Found English transcript with code: {language_used}")
+                        break
+            except Exception as e:
+                logger.warning(f"Strategy 2 failed: {str(e)}")
+        
+        # Strategy 3: Try any available transcript and translate if possible
+        if not transcript:
+            try:
+                # Get first available transcript
+                available_list = list(transcript_list)
+                if available_list:
+                    first_transcript = available_list[0]
+                    if first_transcript.is_translatable:
+                        # Try to translate to English
+                        transcript = first_transcript.translate('en')
+                        language_used = f"{first_transcript.language_code} (translated to en)"
+                        logger.info(f"Using translated transcript from {first_transcript.language_code}")
+                    else:
+                        # Use original non-English transcript as fallback
+                        transcript = first_transcript
+                        language_used = first_transcript.language_code
+                        logger.info(f"Using non-English transcript: {language_used}")
+            except Exception as e:
+                logger.warning(f"Strategy 3 failed: {str(e)}")
+        
+        if not transcript:
+            raise NoTranscriptFound("No suitable transcript found after trying all strategies")
+        
+        # Fetch transcript data
+        logger.info(f"Fetching transcript data for {video_id} using language: {language_used}")
+        transcript_parts = transcript.fetch()
+        
+        if not transcript_parts:
+            raise Exception("Transcript fetch returned empty data")
+        
+        # Build full transcript text
+        full_transcript = " ".join(part['text'] for part in transcript_parts if 'text' in part)
+        
+        if not full_transcript.strip():
+            raise Exception("Transcript text is empty after processing")
+        
+        logger.info(f"Successfully retrieved transcript for {video_id} ({len(full_transcript)} characters)")
         
         return {
             "transcript": full_transcript,
-            "language": auto_transcript.language
+            "language": language_used
         }
+        
     except (TranscriptsDisabled, NoTranscriptFound) as e:
-        logger.error(f"Transcript retrieval error for {video_id}: {str(e)}")
-        return {"error": str(e)}
+        error_msg = f"Transcript not available for video {video_id}: {str(e)}"
+        logger.error(error_msg)
+        return {"error": error_msg}
     except Exception as e:
-        logger.error(f"Unexpected error in transcript retrieval for {video_id}: {str(e)}")
-        return {"error": f"Error retrieving transcript: {str(e)}"}
+        error_msg = f"Error retrieving transcript for {video_id}: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        
+        # Add more specific error context
+        if "no element found" in str(e).lower():
+            error_msg += " (This may be due to region restrictions, video privacy settings, or temporary YouTube API issues)"
+        elif "xml" in str(e).lower():
+            error_msg += " (XML parsing error - possibly due to malformed response from YouTube)"
+        
+        return {"error": error_msg}
 
 @tracer.wrap(service="youtube-service", resource="generate_video_summary_async")
 async def generate_video_summary_async(transcript: str, instructions: str = None):

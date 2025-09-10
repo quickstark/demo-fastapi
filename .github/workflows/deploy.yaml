@@ -83,42 +83,44 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          platforms: linux/amd64  # Specify AMD64 for Synology compatibility
+          platforms: linux/amd64  # AMD64 for GMKTec compatibility
           push: true
           tags: quickstark/api-images:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
       
-      - name: Deploy to Synology
-        id: synology_deploy
-        uses: appleboy/ssh-action@v1.0.3  # Use more recent stable version
+      # Connect to Tailscale network to access GMKTec host
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v2
         if: steps.docker_build.outcome == 'success'
         with:
-          host: ${{ secrets.SYNOLOGY_HOST }}
-          port: ${{ secrets.SYNOLOGY_SSH_PORT }}
-          username: ${{ secrets.SYNOLOGY_USER }}
-          key: ${{ secrets.SYNOLOGY_SSH_KEY }}
-          passphrase: ${{ secrets.SYNOLOGY_SSH_PASSPHRASE }}
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags: tag:ci
+          version: stable
+      
+      - name: Deploy to GMKTec
+        id: gmktec_deploy
+        uses: appleboy/ssh-action@v1.0.3
+        if: steps.docker_build.outcome == 'success'
+        with:
+          host: 100.66.93.87  # GMKTec host via Tailscale
+          port: 22  # Standard SSH port
+          username: ${{ secrets.GMKTEC_USER }}
+          key: ${{ secrets.GMKTEC_SSH_KEY }}
+          passphrase: ${{ secrets.GMKTEC_SSH_PASSPHRASE }}
           script: |
             # Debug: Check current user and environment
             echo "Current user: $(whoami)"
             echo "Current directory: $(pwd)"
             echo "PATH: $PATH"
             
-            # Check if Docker is available in common Synology locations
-            if [ -f /usr/local/bin/docker ]; then
-              DOCKER_CMD="/usr/local/bin/docker"
-              echo "Found Docker at: $DOCKER_CMD"
-            elif [ -f /usr/bin/docker ]; then
-              DOCKER_CMD="/usr/bin/docker"
-              echo "Found Docker at: $DOCKER_CMD"
-            elif command -v docker >/dev/null 2>&1; then
+            # Check Docker availability (standard Linux installation)
+            if command -v docker >/dev/null 2>&1; then
               DOCKER_CMD="docker"
               echo "Found Docker in PATH: $(which docker)"
             else
-              echo "Docker not found. Checking common locations..."
-              ls -la /usr/local/bin/ | grep docker || echo "No docker in /usr/local/bin/"
-              ls -la /usr/bin/ | grep docker || echo "No docker in /usr/bin/"
+              echo "ERROR: Docker not found in PATH"
               exit 1
             fi
             
@@ -195,6 +197,7 @@ jobs:
               -e DD_SERVICE="${{ secrets.DD_SERVICE }}" \
               -e DD_ENV="${{ secrets.DD_ENV }}" \
               -e DD_VERSION="${{ secrets.DD_VERSION }}" \
+              -e DD_AGENT_HOST="${{ secrets.DD_AGENT_HOST }}" \
               -e DD_PROFILING_ENABLED=true \
               -e DD_PROFILING_TIMELINE_ENABLED=true \
               -e DD_DBM_PROPAGATION_MODE=full \
@@ -222,8 +225,6 @@ jobs:
               -e MONGO_USER="${{ secrets.MONGO_USER }}" \
               -e MONGO_PW="${{ secrets.MONGO_PW }}" \
               -e BUG_REPORT_EMAIL="${{ secrets.BUG_REPORT_EMAIL }}" \
-              -e PUID=1026 \
-              -e PGID=100 \
               quickstark/api-images:latest; then
               echo "ERROR: Failed to start container"
               exit 1
@@ -270,7 +271,7 @@ jobs:
 
       # Mark deployment in Datadog
       - name: Mark Deployment in Datadog
-        if: steps.synology_deploy.outcome == 'success'
+        if: steps.gmktec_deploy.outcome == 'success'
         env:
           DD_API_KEY: ${{ secrets.DATADOG_API_KEY }}
           DD_SITE: datadoghq.com

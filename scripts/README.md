@@ -78,7 +78,57 @@ This directory contains all project automation scripts organized for clarity and
 - Verifies sandbox mode status
 - Validates GitHub Secrets configuration
 
+#### `clear-secrets.sh` - GitHub Secrets Cleanup
+```bash
+# Interactive cleanup
+./scripts/clear-secrets.sh
+
+# Dry run to see what would be deleted
+./scripts/clear-secrets.sh --dry-run
+
+# Delete all secrets (with confirmation)
+./scripts/clear-secrets.sh --all
+
+# Keep specific secrets
+./scripts/clear-secrets.sh --exclude DD_API_KEY,DD_APP_KEY
+
+# Delete only Synology-related secrets
+./scripts/clear-secrets.sh --pattern '^SYNOLOGY_'
+```
+
+**Features:**
+- Interactive or bulk deletion modes
+- Dry-run capability to preview changes
+- Pattern matching for selective deletion
+- Exclude list to preserve important secrets
+- Grouped display by category (Database, AWS, Datadog, etc.)
+- Multiple safety confirmations
+
+**Use Cases:**
+- Clean slate for migrations (e.g., Synology to GMKTec)
+- Remove obsolete secrets after infrastructure changes
+- Selective cleanup of specific secret categories
+
 ### Deployment & Infrastructure Scripts
+
+#### `setup-gmktec-migration.sh` - GMKTec Host Migration Setup
+```bash
+# Set up SSH keys and prepare for GMKTec migration
+./scripts/setup-gmktec-migration.sh
+```
+
+**Features:**
+- Generates SSH key pair for GitHub Actions
+- Tests SSH connectivity to GMKTec host
+- Displays GitHub Secrets configuration
+- Provides Tailscale OAuth setup instructions
+- Lists database configuration updates needed
+- Step-by-step migration guidance
+
+**Use with:**
+- `clear-secrets.sh` to remove old Synology secrets
+- `setup-secrets.sh` to upload new GMKTec configuration
+- See `docs/GMKTEC_MIGRATION.md` for complete migration guide
 
 #### `deploy.sh` - Production Deployment
 ```bash
@@ -168,6 +218,27 @@ cp env.example .env.production
 ./scripts/deploy.sh .env.production
 ```
 
+### Infrastructure Migration Workflow (e.g., Synology to GMKTec)
+```bash
+# 1. Clean up old secrets
+./scripts/clear-secrets.sh --dry-run  # Preview what will be deleted
+./scripts/clear-secrets.sh --pattern '^SYNOLOGY_'  # Remove old infra secrets
+
+# 2. Set up new infrastructure
+./scripts/setup-gmktec-migration.sh  # Generate SSH keys and get instructions
+
+# 3. Update environment file with new values
+# Edit .env.production with new database hosts, ports, etc.
+
+# 4. Upload new secrets
+./scripts/setup-secrets.sh .env.production
+
+# 5. Deploy to new infrastructure
+git add .github/workflows/deploy.yaml
+git commit -m "feat: migrate to GMKTec infrastructure"
+git push
+```
+
 ### CI/CD Enhancement Workflow
 ```bash
 # 1. Add security scanning
@@ -188,7 +259,10 @@ scripts/
 ├── build.sh                  # Docker build & container management
 ├── test.sh                   # Test runner with Datadog integration
 ├── deploy.sh                 # Production deployment workflow
-├── setup-secrets.sh          # GitHub secrets management
+├── setup-secrets.sh          # GitHub secrets upload
+├── clear-secrets.sh          # GitHub secrets cleanup
+├── setup-gmktec-migration.sh # GMKTec migration helper
+├── validate-ses.sh           # Amazon SES validation
 └── enterprise-setup.sh       # Enterprise CI/CD features
 ```
 
