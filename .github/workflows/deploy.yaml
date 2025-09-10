@@ -89,19 +89,33 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
       
+      # Debug: Check if OAuth secrets are available
+      - name: Debug OAuth Secrets
+        if: steps.docker_build.outcome == 'success'
+        run: |
+          echo "Checking OAuth secrets availability..."
+          if [ -z "${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}" ]; then
+            echo "ERROR: TAILSCALE_OAUTH_CLIENT_ID is not set"
+          else
+            echo "✓ TAILSCALE_OAUTH_CLIENT_ID is set (hidden)"
+          fi
+          if [ -z "${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}" ]; then
+            echo "ERROR: TAILSCALE_OAUTH_CLIENT_SECRET is not set"
+          else
+            echo "✓ TAILSCALE_OAUTH_CLIENT_SECRET is set (hidden)"
+          fi
+      
       # Connect to Tailscale network to access GMKTec host
       - name: Connect to Tailscale
         uses: tailscale/github-action@v3
         if: steps.docker_build.outcome == 'success'
         with:
-          # Using auth key for now - simpler than OAuth
-          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
-          # OAuth alternative (currently not working):
-          # oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
-          # oauth-secret: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
-          # tags: tag:ci
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags: tag:ci
           use-cache: 'true'  # Cache Tailscale binaries for better performance
-      
+          version: latest
+
       - name: Deploy to GMKTec
         id: gmktec_deploy
         uses: appleboy/ssh-action@v1.0.3
