@@ -1,0 +1,12 @@
+{
+  "acls": [
+    {
+      "action": "accept",
+      "src": ["*"],
+      "dst": ["*:*"]
+    }
+  ],
+  "tagOwners": {
+    "tag:ci": ["autogroup:admin"]
+  }
+}

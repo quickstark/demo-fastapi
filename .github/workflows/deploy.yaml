@@ -94,9 +94,12 @@ jobs:
         uses: tailscale/github-action@v3
         if: steps.docker_build.outcome == 'success'
         with:
-          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
-          tags: tag:ci
+          # Using auth key for now - simpler than OAuth
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          # OAuth alternative (currently not working):
+          # oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          # oauth-secret: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          # tags: tag:ci
           use-cache: 'true'  # Cache Tailscale binaries for better performance
       
       - name: Deploy to GMKTec

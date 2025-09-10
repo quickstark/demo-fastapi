@@ -1,0 +1,28 @@
+name: Test Tailscale Connection
+on:
+  workflow_dispatch:  # Manual trigger for testing
+
+jobs:
+  test-tailscale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Test Tailscale Connection
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags: tag:ci
+          version: 1.82.0
+      
+      - name: Test Connectivity
+        run: |
+          echo "Tailscale status:"
+          tailscale status
+          echo ""
+          echo "Tailscale IP:"
+          tailscale ip -4
+          echo ""
+          echo "Testing connectivity to GMKTec (100.66.93.87):"
+          ping -c 3 100.66.93.87 || echo "Ping failed - this might be normal if ICMP is blocked"
