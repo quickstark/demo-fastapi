@@ -1,10 +1,10 @@
 # Core dependencies
-fastapi==0.100.0
+fastapi==0.116.2  # Updated to support Starlette 0.48.0
 hypercorn==0.14.4
 python-dotenv==1.0.0
 python-multipart==0.0.20
 httpx==0.24.1  # Fixed version for TestClient compatibility
-starlette==0.27.0
+starlette==0.48.0  # Updated to address security vulnerability
 urllib3>=2.5.0  # Explicitly pinned to address security vulnerability
 
 # OpenAI and YouTube
