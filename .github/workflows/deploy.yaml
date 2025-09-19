@@ -214,7 +214,7 @@ jobs:
               -e DD_SERVICE="${{ secrets.DD_SERVICE }}" \
               -e DD_ENV="${{ secrets.DD_ENV }}" \
               -e DD_VERSION="${{ secrets.DD_VERSION }}" \
-              -e DD_AGENT_HOST="${{ secrets.DD_AGENT_HOST:-host.docker.internal}}" \
+              -e DD_AGENT_HOST="${{ secrets.DD_AGENT_HOST || 'host.docker.internal' }}" \
               -e DD_PROFILING_ENABLED=true \
               -e DD_PROFILING_TIMELINE_ENABLED=true \
               -e DD_DBM_PROPAGATION_MODE=full \
