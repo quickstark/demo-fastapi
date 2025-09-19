@@ -19,8 +19,8 @@ psycopg[binary]==3.2.9
 python-tds>=1.16.0  # SQL Server support (pure Python)
 
 # AWS
-boto3>=1.34.0  # Updated to support urllib3 2.x
-botocore>=1.34.0  # Updated to support urllib3 2.x
+boto3>=1.35.0  # Updated to Python 3.10+ version for urllib3 2.x support
+botocore>=1.35.0  # Updated to Python 3.10+ version for urllib3 2.x support
 
 # Datadog - updated to use pre-compiled wheels
 ddtrace>=3.8.0  # Updated to use newer version with pre-compiled wheels
