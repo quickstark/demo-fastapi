@@ -5,6 +5,7 @@ python-dotenv==1.0.0
 python-multipart==0.0.20
 httpx==0.24.1  # Fixed version for TestClient compatibility
 starlette==0.27.0
+urllib3>=2.5.0  # Explicitly pinned to address security vulnerability
 
 # OpenAI and YouTube
 openai==1.68.2
@@ -18,8 +19,8 @@ psycopg[binary]==3.2.9
 python-tds>=1.16.0  # SQL Server support (pure Python)
 
 # AWS
-boto3==1.25.4
-botocore==1.28.5
+boto3>=1.34.0  # Updated to support urllib3 2.x
+botocore>=1.34.0  # Updated to support urllib3 2.x
 
 # Datadog - updated to use pre-compiled wheels
 ddtrace>=3.8.0  # Updated to use newer version with pre-compiled wheels

@@ -210,10 +210,11 @@ jobs:
               --label "deployment.source=github-actions" \
               --label "deployment.image_digest=$NEW_DIGEST" \
               -p 9000:8080 \
+              --add-host=host.docker.internal:host-gateway \
               -e DD_SERVICE="${{ secrets.DD_SERVICE }}" \
               -e DD_ENV="${{ secrets.DD_ENV }}" \
               -e DD_VERSION="${{ secrets.DD_VERSION }}" \
-              -e DD_AGENT_HOST="${{ secrets.DD_AGENT_HOST }}" \
+              -e DD_AGENT_HOST="${{ secrets.DD_AGENT_HOST:-host.docker.internal}}" \
               -e DD_PROFILING_ENABLED=true \
               -e DD_PROFILING_TIMELINE_ENABLED=true \
               -e DD_DBM_PROPAGATION_MODE=full \

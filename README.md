@@ -1,21 +1,24 @@
 # FastAPI Image Processing & YouTube Summarization Service
 
-A production-ready FastAPI application that combines intelligent image processing with AI-powered YouTube video summarization. Features comprehensive monitoring, multi-database support, and flexible deployment options.
+A production-ready FastAPI application that combines intelligent image processing with AI-powered YouTube video summarization. Features comprehensive monitoring, multi-database support (MongoDB, PostgreSQL, SQL Server), and flexible deployment options.
 
 ## 🚀 Features
 
 ### **Image Processing & Storage**
 - **AWS S3 Integration** - Secure image upload and storage
 - **Amazon Rekognition** - Automated label detection, text extraction, and content moderation
-- **Multi-Database Support** - Store metadata in MongoDB or PostgreSQL
+- **Multi-Database Support** - Store metadata in MongoDB, PostgreSQL, or SQL Server
 - **Content Safety** - Automatic detection of questionable content and "bug" images
 - **Smart Error Detection** - Identifies images containing error text for debugging
+- **Amazon SES Integration** - Email notifications for error reporting (replaced SendGrid)
 
 ### **YouTube Video Analysis**
 - **AI-Powered Summarization** - Uses OpenAI to generate intelligent video summaries
-- **Transcript Processing** - Extracts and processes YouTube video transcripts
+- **Batch Processing** - Process multiple YouTube videos simultaneously with configurable strategies
+- **Transcript Processing** - Extracts and processes YouTube video transcripts with fallback mechanisms
 - **Notion Integration** - Automatically save video summaries to Notion databases
 - **Metadata Extraction** - Retrieves video details including title, channel, and publication date
+- **Multiple URL Support** - Accept various YouTube URL formats (standard, shorts, mobile)
 
 ### **Comprehensive Monitoring**
 - **Datadog APM** - Full application performance monitoring with distributed tracing
@@ -25,10 +28,12 @@ A production-ready FastAPI application that combines intelligent image processin
 - **Health Monitoring** - Application health checks and uptime tracking
 
 ### **Production-Ready Architecture**
-- **Docker Containerization** - Multi-stage builds for optimal performance
-- **Kubernetes Support** - Ready for container orchestration
-- **Flexible Deployment** - Support for Docker, Kubernetes, and Synology NAS
+- **Docker Containerization** - Multi-stage builds with Python 3.9 slim base
+- **Kubernetes Support** - Ready for container orchestration with manifest files
+- **GitHub Actions CI/CD** - Automated testing, building, and deployment pipeline
+- **Flexible Deployment** - Support for Docker, Kubernetes, Synology NAS, and cloud platforms
 - **Environment Management** - Separate configurations for dev/staging/production
+- **Database Migration Tools** - SQL scripts for easy database setup and schema management
 
 ## 📋 API Endpoints
 
@@ -38,7 +43,8 @@ A production-ready FastAPI application that combines intelligent image processin
 - `DELETE /delete_image/{id}?backend=mongo|postgres` - Remove images and metadata
 
 ### **YouTube Processing**
-- `POST /api/v1/summarize-youtube` - Generate AI summaries of YouTube videos
+- `POST /api/v1/summarize-youtube` - Generate AI summary of a single YouTube video
+- `POST /api/v1/batch-summarize-youtube` - Process multiple YouTube videos with batch strategies
 - `POST /api/v1/save-youtube-to-notion` - Save video summaries directly to Notion
 
 ### **OpenAI Services**
@@ -46,12 +52,15 @@ A production-ready FastAPI application that combines intelligent image processin
 - `GET /api/v1/openai-gen-image/{prompt}` - Generate images using DALL-E 3
 
 ### **Database Operations**
-- `GET /api/v1/mongo/*` - MongoDB operations and testing
-- `GET /api/v1/postgres/*` - PostgreSQL operations and testing
+- `GET /api/v1/mongo/get-image-mongo/{id}` - Retrieve image from MongoDB
+- `DELETE /api/v1/mongo/delete-all-mongo/{key}` - Delete all items by key from MongoDB
+- `GET /api/v1/postgres/get-image-postgres/{id}` - Retrieve image from PostgreSQL
+- `GET /api/v1/sqlserver/get-image-sqlserver/{id}` - Retrieve image from SQL Server
 
 ### **System & Monitoring**
 - `GET /` - Root endpoint with welcome message
 - `GET /health` - Application health status
+- `GET /test-sqlserver` - Test SQL Server connection
 - `GET /timeout-test?timeout=N` - Performance testing endpoint
 - `POST /create_post` - Demo endpoint for external API integration
 
@@ -76,7 +85,13 @@ A production-ready FastAPI application that combines intelligent image processin
    # Edit .env with your development credentials
    ```
 
-4. **Run the application**:
+4. **Set up databases (optional)**:
+   ```bash
+   # Interactive database setup
+   ./scripts/setup-databases.sh
+   ```
+
+5. **Run the application**:
    ```bash
    python main.py
    ```
@@ -147,6 +162,13 @@ PGDATABASE=your-database-name
 PGUSER=your-postgres-username
 PGPASSWORD=your-postgres-password
 
+# SQL Server (optional)
+SQLSERVER_HOST=your-sqlserver-host
+SQLSERVER_PORT=1433
+SQLSERVER_DATABASE=your-database-name
+SQLSERVER_USER=your-sqlserver-username
+SQLSERVER_PASSWORD=your-sqlserver-password
+
 # Notion Integration (optional)
 NOTION_API_KEY=secret_your-notion-key
 NOTION_DATABASE_ID=your-notion-database-id
@@ -167,9 +189,10 @@ BUG_REPORT_EMAIL=your-email@domain.com
 ### **Optional Features**
 
 The application gracefully handles missing services:
-- **MongoDB/PostgreSQL**: Either database can be used, or both
+- **Databases**: MongoDB, PostgreSQL, and SQL Server can be used independently or together
 - **Notion Integration**: YouTube summaries work without Notion
 - **Datadog**: Monitoring is optional for development
+- **Amazon SES**: Email notifications are optional (fallback available)
 
 ## 🐳 Docker Configuration
 
@@ -200,6 +223,45 @@ docker build --no-cache -t fastapi-app .
 # This creates a .tar file on your Desktop for import into Synology Container Manager
 # Port mapping: 9000:8080
 # Environment: Use .env.production values
+```
+
+## 💡 Usage Examples
+
+### **Batch YouTube Processing**
+```python
+# See examples/youtube_batch_usage.py for complete examples
+import asyncio
+from examples.youtube_batch_usage import YouTubeBatchClient
+
+async def batch_process_videos():
+    client = YouTubeBatchClient()
+    
+    # Process multiple videos
+    urls = [
+        "https://youtube.com/watch?v=video1",
+        "https://youtube.com/watch?v=video2",
+        "https://youtube.com/watch?v=video3"
+    ]
+    
+    result = await client.process_batch(
+        urls=urls,
+        strategy="parallel_individual",
+        save_to_notion=True,
+        max_parallel=3
+    )
+    
+    print(f"Processed {len(result['results'])} videos")
+
+asyncio.run(batch_process_videos())
+```
+
+### **Database Setup**
+```bash
+# Interactive database setup wizard
+./scripts/setup-databases.sh
+
+# Or run SQL scripts directly
+psql -h localhost -U username -d database_name -f sql/postgres_schema.sql
 ```
 
 ## 🧪 Testing
@@ -237,21 +299,34 @@ demo-fastapi/
 │   ├── build.sh              # Multi-platform Docker builds
 │   ├── deploy.sh             # Production deployment
 │   ├── setup-secrets.sh      # GitHub Secrets management
+│   ├── setup-databases.sh    # Database setup and migration helper
 │   └── test.sh               # Test automation
 ├── src/                       # Application modules
 │   ├── amazon.py             # AWS S3, Rekognition, SES integration
 │   ├── mongo.py              # MongoDB operations
 │   ├── postgres.py           # PostgreSQL operations
+│   ├── sqlserver.py          # SQL Server operations
 │   ├── openai_service.py     # OpenAI API integration
 │   ├── datadog.py            # Custom monitoring and events
 │   └── services/             # Additional service integrations
-│       ├── youtube_service.py # YouTube transcript processing
-│       └── notion_service.py  # Notion database integration
+│       ├── youtube_service.py          # Single video processing
+│       ├── youtube_batch_service.py    # Batch video processing
+│       ├── youtube_transcript_fallback.py # Transcript fallback handling
+│       └── notion_service.py           # Notion database integration
 ├── tests/                     # Test suite
 │   ├── conftest.py           # Test configuration and fixtures
 │   ├── test_basic.py         # API endpoint tests
 │   ├── test_simple.py        # Unit tests
 │   └── mongo_test.py         # Database integration tests
+├── sql/                       # Database schemas and migrations
+│   ├── postgres_schema.sql   # PostgreSQL table definitions
+│   ├── sqlserver_schema.sql  # SQL Server table definitions
+│   └── *.sql                 # Migration and setup scripts
+├── examples/                  # Usage examples
+│   └── youtube_batch_usage.py # Batch processing examples
+├── .github/workflows/         # CI/CD pipelines
+│   ├── deploy.yaml           # Main deployment workflow
+│   └── deploy-test.yaml      # Test environment deployment
 └── k8s-*.yaml                # Kubernetes deployment manifests
 ```
 
@@ -260,14 +335,15 @@ demo-fastapi/
 ### **Image Processing Workflow**
 1. **Upload** - Images uploaded to AWS S3
 2. **Analysis** - Amazon Rekognition extracts labels, text, and checks content
-3. **Storage** - Metadata stored in MongoDB or PostgreSQL
+3. **Storage** - Metadata stored in MongoDB, PostgreSQL, or SQL Server
 4. **Monitoring** - Content moderation and error detection events sent to Datadog
 
 ### **YouTube Processing Workflow**
-1. **URL Parsing** - Extract video ID from YouTube URL
-2. **Transcript Retrieval** - Get video transcript using YouTube API
-3. **AI Summarization** - Generate summary using OpenAI GPT
-4. **Optional Storage** - Save to Notion database with metadata
+1. **URL Parsing** - Extract video ID from multiple YouTube URL formats
+2. **Transcript Retrieval** - Get video transcript with multiple fallback mechanisms
+3. **AI Summarization** - Generate summary using OpenAI GPT with custom instructions
+4. **Batch Processing** - Handle multiple videos with configurable parallel processing strategies
+5. **Optional Storage** - Save to Notion database with metadata and tags
 
 ### **Monitoring & Observability**
 - **Request Tracing** - Every API call tracked with Datadog APM
