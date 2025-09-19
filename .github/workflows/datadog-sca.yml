@@ -34,11 +34,9 @@ jobs:
       id: datadog-software-composition-analysis
       uses: DataDog/datadog-sca-github-action@main
       with:
-        dd_api_key: ${{ secrets.DATADOG_API_KEY }}  # Using consistent secret name
+        dd_api_key: ${{ secrets.DATADOG_API_KEY }}
         dd_app_key: ${{ secrets.DATADOG_APP_KEY }}
         dd_site: "datadoghq.com"
-        dd_service: ${{ secrets.DD_SERVICE }}  # Add service tag for better tracking
-        dd_env: ${{ secrets.DD_ENV }}  # Add environment tag
         
     - name: Upload SBOM as artifact
       if: always()
