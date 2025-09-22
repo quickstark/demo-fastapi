@@ -30,6 +30,25 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         
+    - name: Generate SBOM using multiple tools
+      run: |
+        # Install SBOM generation tools
+        pip install pip-licenses cyclonedx-bom
+        
+        # Create SBOM directory
+        mkdir -p sbom
+        
+        # Generate SBOM using pip-licenses
+        pip-licenses --format=json --output-file=sbom/pip-licenses.json
+        pip-licenses --format=csv --output-file=sbom/pip-licenses.csv
+        
+        # Generate CycloneDX SBOM (industry standard format)
+        cyclonedx-py requirements -i requirements.txt -o sbom/cyclonedx-sbom.json --format json
+        cyclonedx-py requirements -i requirements.txt -o sbom/cyclonedx-sbom.xml --format xml
+        
+        echo "Generated SBOM files:"
+        ls -la sbom/
+        
     - name: Check imported libraries are secure and compliant
       id: datadog-software-composition-analysis
       uses: DataDog/datadog-sca-github-action@main
@@ -44,9 +63,11 @@ jobs:
       with:
         name: datadog-sbom-${{ github.sha }}
         path: |
-          **/sbom.json
-          **/sbom.xml
+          sbom/
+          **/requirements*.txt
+          **/package*.json
         retention-days: 30
+        if-no-files-found: warn
         
     - name: Comment on PR with SCA vulnerability results
       if: github.event_name == 'pull_request' && failure()
@@ -85,6 +106,7 @@ jobs:
       with:
         name: datadog-static-analysis-${{ github.sha }}
         path: |
+          .datadog/
           **/static-analysis-results.json
           **/static-analysis-report.html
         retention-days: 30
