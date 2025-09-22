@@ -6,6 +6,7 @@ python-multipart==0.0.20
 httpx==0.24.1  # Fixed version for TestClient compatibility
 starlette==0.48.0  # Updated to address security vulnerability
 urllib3>=2.5.0  # Explicitly pinned to address security vulnerability
+h11>=0.16.0  # Explicitly pinned to address CVE-2024-62803 (request smuggling vulnerability)
 
 # OpenAI and YouTube
 openai==1.68.2
