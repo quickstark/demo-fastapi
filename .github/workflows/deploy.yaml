@@ -37,6 +37,7 @@ jobs:
           DD_SERVICE: ${{ secrets.DD_SERVICE }}
           DD_VERSION: ${{ github.sha }}
           DD_API_KEY: ${{ secrets.DD_API_KEY }}
+          DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
           DD_SITE: datadoghq.com
           DD_CIVISIBILITY_ENABLED: true
           DD_CIVISIBILITY_ITR_ENABLED: true
@@ -46,8 +47,6 @@ jobs:
           MONGO_PW: testpass
           # Other optional environment variables with default values
           OPENAI_API_KEY: dummy-key-for-testing
-          DD_API_KEY: dummy-key-for-testing
-          DD_APP_KEY: dummy-key-for-testing
           # SENDGRID_API_KEY: dummy-key-for-testing  # REMOVED: Migrating to SES
           SES_REGION: us-east-1
           SES_FROM_EMAIL: test@example.com
