@@ -143,6 +143,8 @@ origins = [
     "http://127.0.0.1:3000",
     "http://192.168.1.100:3000",
     "http://192.168.1.100:5173",
+    "http://192.168.1.200:3000",
+    "http://192.168.1.200:5173",
     "http://192.168.1.61:5174",  # Your development IP
     "*",                          # Allow all origins (only for development!)
 ]

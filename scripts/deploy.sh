@@ -6,10 +6,11 @@
 # This script handles the complete deployment workflow:
 # 1. Environment variable setup
 # 2. Git operations (add, commit, push)
-# 3. GitHub Secrets upload
+# 3. GitHub Secrets upload (only if changed)
 # 4. Deployment monitoring
 #
-# Usage: ./scripts/deploy.sh [env-file]
+# Usage: ./scripts/deploy.sh [env-file] [--force]
+#        --force: Force update GitHub secrets even if unchanged
 
 set -e
 
@@ -266,14 +267,120 @@ perform_git_operations() {
     echo
 }
 
+get_env_hash() {
+    local env_file="$1"
+    # Create a hash of the env file contents (excluding comments and empty lines)
+    grep -v '^#' "$env_file" | grep -v '^$' | sort | sha256sum | cut -d' ' -f1
+}
+
+compare_secrets() {
+    local env_file="$1"
+    local changed_vars=()
+    local new_vars=()
+    local unchanged_count=0
+    local hash_changed=false
+    
+    print_step "Comparing local environment with GitHub secrets..."
+    
+    # Get current GitHub secrets
+    local github_secrets=$(gh secret list --json name -q '.[].name' 2>/dev/null || echo "")
+    
+    # Check if ENV_FILE_HASH secret exists and compare
+    local current_hash=$(get_env_hash "$env_file")
+    if echo "$github_secrets" | grep -q "^ENV_FILE_HASH$"; then
+        print_step "Checking environment file hash..."
+        echo -e "${CYAN}Current env file hash: ${current_hash:0:16}...${NC}"
+        hash_changed=true  # We can't compare the actual value, but we know it exists
+    fi
+    
+    # Read environment file and compare
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        # Skip empty lines and comments
+        if [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]]; then
+            continue
+        fi
+        
+        if [[ "$line" =~ ^([^=]+)=(.*)$ ]]; then
+            local key="${BASH_REMATCH[1]}"
+            local value="${BASH_REMATCH[2]}"
+            
+            # Remove quotes from value
+            value=$(echo "$value" | sed 's/^["'\'']\|["'\'']$//g')
+            
+            # Check if secret exists in GitHub
+            if echo "$github_secrets" | grep -q "^$key$"; then
+                # Secret exists, check if value changed
+                # Note: We can't compare actual values (GitHub doesn't expose them)
+                # So we'll mark as potentially changed and let user decide
+                changed_vars+=("$key")
+                ((unchanged_count++))
+            else
+                # New secret
+                new_vars+=("$key")
+            fi
+        fi
+    done < "$env_file"
+    
+    # Display comparison results
+    echo
+    if [[ ${#new_vars[@]} -gt 0 ]]; then
+        echo -e "${GREEN}New secrets to add (${#new_vars[@]}):${NC}"
+        for var in "${new_vars[@]}"; do
+            echo "  + $var"
+        done
+        echo
+    fi
+    
+    if [[ $unchanged_count -gt 0 ]]; then
+        echo -e "${YELLOW}Existing secrets in GitHub: $unchanged_count${NC}"
+        echo -e "${YELLOW}Note: Cannot verify if values changed (GitHub doesn't expose secret values)${NC}"
+        echo
+    fi
+    
+    # Return 0 if there are new variables, 1 if all exist
+    if [[ ${#new_vars[@]} -gt 0 ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 upload_secrets() {
     local env_file="$1"
+    local force_update="$2"
+    
+    # Check if we should skip the update
+    if [[ "$force_update" != "true" ]]; then
+        if compare_secrets "$env_file"; then
+            print_step "New secrets detected, proceeding with update..."
+        else
+            print_warning "No new secrets detected in environment file"
+            
+            if prompt_yes_no "All secrets already exist in GitHub. Update anyway?" "n"; then
+                print_step "Proceeding with secret update..."
+            else
+                print_success "Skipping secret upload (no changes detected)"
+                echo -e "${CYAN}Tip: Use --force flag to force update all secrets${NC}"
+                echo
+                return
+            fi
+        fi
+    else
+        print_step "Force update enabled, uploading all secrets..."
+    fi
     
     print_step "Uploading secrets to GitHub..."
     
     if [[ -f "$SCRIPT_DIR/setup-secrets.sh" ]]; then
         chmod +x "$SCRIPT_DIR/setup-secrets.sh"
         "$SCRIPT_DIR/setup-secrets.sh" "$env_file"
+        
+        # Upload hash of the env file for future comparisons
+        local env_hash=$(get_env_hash "$env_file")
+        print_step "Storing environment file hash for future comparisons..."
+        echo "$env_hash" | gh secret set ENV_FILE_HASH
+        
+        print_success "Secrets and environment hash uploaded successfully"
     else
         print_error "setup-secrets.sh not found in scripts directory"
         exit 1
@@ -339,14 +446,45 @@ show_post_deployment_info() {
 main() {
     cd "$PROJECT_ROOT"
     
+    # Parse command line arguments
+    local env_file=""
+    local force_update="false"
+    
+    for arg in "$@"; do
+        case $arg in
+            --force|-f)
+                force_update="true"
+                shift
+                ;;
+            --help|-h)
+                echo "Usage: $0 [env-file] [--force]"
+                echo ""
+                echo "Options:"
+                echo "  env-file    Path to environment file (default: .env)"
+                echo "  --force,-f  Force update GitHub secrets even if unchanged"
+                echo "  --help,-h   Show this help message"
+                exit 0
+                ;;
+            *)
+                if [[ -z "$env_file" && ! "$arg" =~ ^- ]]; then
+                    env_file="$arg"
+                fi
+                ;;
+        esac
+    done
+    
     print_header "FastAPI Production Deployment"
+    
+    if [[ "$force_update" == "true" ]]; then
+        print_warning "Force update mode enabled"
+        echo
+    fi
     
     # Check prerequisites
     check_prerequisites
     
     # Select and validate environment file
-    local env_file
-    env_file=$(select_env_file "$1")
+    env_file=$(select_env_file "$env_file")
     validate_env_file "$env_file"
     
     # Check git status and perform operations if needed
@@ -354,8 +492,8 @@ main() {
         perform_git_operations
     fi
     
-    # Upload secrets to GitHub
-    upload_secrets "$env_file"
+    # Upload secrets to GitHub (with force flag)
+    upload_secrets "$env_file" "$force_update"
     
     # Monitor deployment
     monitor_deployment

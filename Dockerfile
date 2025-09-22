@@ -30,11 +30,10 @@ ENV PYTHONPATH=/app \
     DD_AGENT_HOST=192.168.1.100 \
     DD_TRACE_AGENT_PORT=8126 \
     DD_DBM_PROPAGATION_MODE=full \
+    DD_IAST_ENABLED=true \
     DD_LLMOBS_ENABLED=true \
     DD_LLMOBS_ML_APP=youtube-summarizer \
     DD_LLMOBS_EVALUATORS="ragas_faithfulness,ragas_context_precision,ragas_answer_relevancy" \
-    PUID=1026 \
-    PGID=100
 
 # Use python -m to run hypercorn
 CMD ["python", "-m", "hypercorn", "main:app", "--bind", "0.0.0.0:8080"]
