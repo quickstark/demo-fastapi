@@ -33,7 +33,7 @@ ENV PYTHONPATH=/app \
     DD_IAST_ENABLED=true \
     DD_LLMOBS_ENABLED=true \
     DD_LLMOBS_ML_APP=youtube-summarizer \
-    DD_LLMOBS_EVALUATORS="ragas_faithfulness,ragas_context_precision,ragas_answer_relevancy" \
+    DD_LLMOBS_EVALUATORS="ragas_faithfulness,ragas_context_precision,ragas_answer_relevancy"
 
 # Use python -m to run hypercorn
 CMD ["python", "-m", "hypercorn", "main:app", "--bind", "0.0.0.0:8080"]
