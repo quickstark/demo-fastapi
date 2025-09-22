@@ -174,8 +174,8 @@ NOTION_API_KEY=secret_your-notion-key
 NOTION_DATABASE_ID=your-notion-database-id
 
 # Datadog Monitoring
-DATADOG_API_KEY=your-datadog-api-key
-DATADOG_APP_KEY=your-datadog-app-key
+DD_API_KEY=your-datadog-api-key
+DD_APP_KEY=your-datadog-app-key
 DD_AGENT_HOST=192.168.1.100  # Your Datadog agent host
 DD_TRACE_AGENT_PORT=8126
 

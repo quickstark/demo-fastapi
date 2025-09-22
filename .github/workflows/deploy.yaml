@@ -27,7 +27,7 @@ jobs:
         uses: datadog/test-visibility-github-action@v2
         with:
           languages: python
-          api_key: ${{ secrets.DATADOG_API_KEY }}
+          api_key: ${{ secrets.DD_API_KEY }}
           site: datadoghq.com
       
       # Run tests with Datadog integration
@@ -36,7 +36,7 @@ jobs:
           DD_ENV: ci
           DD_SERVICE: ${{ secrets.DD_SERVICE }}
           DD_VERSION: ${{ github.sha }}
-          DD_API_KEY: ${{ secrets.DATADOG_API_KEY }}
+          DD_API_KEY: ${{ secrets.DD_API_KEY }}
           DD_SITE: datadoghq.com
           DD_CIVISIBILITY_ENABLED: true
           DD_CIVISIBILITY_ITR_ENABLED: true
@@ -46,8 +46,8 @@ jobs:
           MONGO_PW: testpass
           # Other optional environment variables with default values
           OPENAI_API_KEY: dummy-key-for-testing
-          DATADOG_API_KEY: dummy-key-for-testing
-          DATADOG_APP_KEY: dummy-key-for-testing
+          DD_API_KEY: dummy-key-for-testing
+          DD_APP_KEY: dummy-key-for-testing
           # SENDGRID_API_KEY: dummy-key-for-testing  # REMOVED: Migrating to SES
           SES_REGION: us-east-1
           SES_FROM_EMAIL: test@example.com
@@ -229,8 +229,8 @@ jobs:
               -e SQLSERVERPW="${{ secrets.SQLSERVERPW }}" \
               -e SQLSERVERDB="${{ secrets.SQLSERVERDB }}" \
               -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
-              -e DATADOG_API_KEY="${{ secrets.DATADOG_API_KEY }}" \
-              -e DATADOG_APP_KEY="${{ secrets.DATADOG_APP_KEY }}" \
+              -e DD_API_KEY="${{ secrets.DD_API_KEY }}" \
+              -e DD_APP_KEY="${{ secrets.DD_APP_KEY }}" \
               -e SES_REGION="${{ secrets.SES_REGION }}" \
               -e SES_FROM_EMAIL="${{ secrets.SES_FROM_EMAIL }}" \
               -e NOTION_API_KEY="${{ secrets.NOTION_API_KEY }}" \
@@ -290,7 +290,7 @@ jobs:
       - name: Mark Deployment in Datadog
         if: steps.gmktec_deploy.outcome == 'success'
         env:
-          DD_API_KEY: ${{ secrets.DATADOG_API_KEY }}
+          DD_API_KEY: ${{ secrets.DD_API_KEY }}
           DD_SITE: datadoghq.com
           DD_BETA_COMMANDS_ENABLED: 1
           DD_GITHUB_JOB_NAME: build-and-deploy

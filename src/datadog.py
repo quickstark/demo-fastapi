@@ -23,8 +23,8 @@ dotenv_path = os.path.join(APP_ROOT, '.env')
 load_dotenv(dotenv_path)
 
 # Get Datadog API credentials
-DD_API_KEY = os.getenv('DATADOG_API_KEY')
-DD_APP_KEY = os.getenv('DATADOG_APP_KEY')
+DD_API_KEY = os.getenv('DD_API_KEY')
+DD_APP_KEY = os.getenv('DD_APP_KEY')
 
 # Get Amazon SES configuration
 SES_REGION = os.getenv('SES_REGION', 'us-west-2')

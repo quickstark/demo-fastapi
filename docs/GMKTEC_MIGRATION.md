@@ -87,8 +87,8 @@ Add the following secrets to your GitHub repository (Settings → Secrets and va
 - `SQLSERVERPW`
 - `SQLSERVERDB`
 - `OPENAI_API_KEY`
-- `DATADOG_API_KEY`
-- `DATADOG_APP_KEY`
+- `DD_API_KEY`
+- `DD_APP_KEY`
 - `SES_REGION`
 - `SES_FROM_EMAIL`
 - `NOTION_API_KEY`

@@ -61,9 +61,9 @@ echo "  DD_LLMOBS_ENABLED: $DD_LLMOBS_ENABLED"
 echo "  DD_LLMOBS_EVALUATORS_ENABLED: $DD_LLMOBS_EVALUATORS_ENABLED"
 
 # Check if Datadog API key is set
-if [[ -z "$DD_API_KEY" && -z "$DATADOG_API_KEY" ]]; then
+if [[ -z "$DD_API_KEY" ]]; then
     echo -e "${YELLOW}⚠️  Warning: No Datadog API key found. Tests will run without Datadog integration.${NC}"
-    echo -e "${YELLOW}   Set DD_API_KEY or DATADOG_API_KEY environment variable to enable Datadog Test Optimization.${NC}"
+    echo -e "${YELLOW}   Set DD_API_KEY environment variable to enable Datadog Test Optimization.${NC}"
     echo ""
 fi
 

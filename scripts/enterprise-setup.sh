@@ -806,7 +806,7 @@ module "fastapi_app" {
   secrets = {
     PGPASSWORD      = "/fastapi/prod/database/password"
     OPENAI_API_KEY  = "/fastapi/prod/openai/api_key"
-    DATADOG_API_KEY = "/fastapi/prod/datadog/api_key"
+    DD_API_KEY = "/fastapi/prod/datadog/api_key"
   }
   
   tags = {

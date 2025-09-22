@@ -180,7 +180,7 @@ This directory contains all project automation scripts organized for clarity and
 ## Environment Variables
 
 ### Datadog Configuration
-- `DD_API_KEY` / `DATADOG_API_KEY` - Datadog API key
+- `DD_API_KEY` - Datadog API key
 - `DD_ENV` - Environment name (test, staging, prod)
 - `DD_SERVICE` - Service name
 - `DD_VERSION` - Version identifier
