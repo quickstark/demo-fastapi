@@ -43,8 +43,9 @@ jobs:
         pip-licenses --format=csv --output-file=sbom/pip-licenses.csv
         
         # Generate CycloneDX SBOM (industry standard format)
-        cyclonedx-py requirements -i requirements.txt -o sbom/cyclonedx-sbom.json --format json
-        cyclonedx-py requirements -i requirements.txt -o sbom/cyclonedx-sbom.xml --format xml
+        # Note: cyclonedx-py uses different syntax - output format is determined by file extension
+        cyclonedx-py requirements -i requirements.txt -o sbom/cyclonedx-sbom.json
+        cyclonedx-py requirements -i requirements.txt -o sbom/cyclonedx-sbom.xml
         
         echo "Generated SBOM files:"
         ls -la sbom/
