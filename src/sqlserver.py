@@ -35,6 +35,7 @@ dotenv_path = os.path.join(APP_ROOT, '.env')
 load_dotenv(dotenv_path)
 
 # Prep our environment variables / upload .env to Railway.app
+SQLSERVER_ENABLED = os.getenv('SQLSERVER_ENABLED', 'true').lower() == 'true'
 SQLSERVER_HOST = os.getenv('SQLSERVERHOST')
 SQLSERVER_PORT = int(os.getenv('SQLSERVERPORT', '1433'))
 SQLSERVER_USER = os.getenv('SQLSERVERUSER')
@@ -64,8 +65,17 @@ conn = None
 
 def get_connection():
     """Get or create SQL Server connection with improved error handling."""
+    if not SQLSERVER_ENABLED:
+        logger.info("SQL Server is disabled via SQLSERVER_ENABLED=false")
+        return None
+    
     if not PYTDS_AVAILABLE:
         logger.error("pytds is not available. SQL Server connection cannot be established.")
+        return None
+    
+    # Check if SQL Server is configured
+    if not SQLSERVER_HOST or not SQLSERVER_USER:
+        logger.warning("SQL Server configuration not found. Skipping SQL Server connection.")
         return None
         
     global conn
