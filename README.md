@@ -1,6 +1,16 @@
 # FastAPI Image Processing & YouTube Summarization Service
 
-A production-ready FastAPI application that combines intelligent image processing with AI-powered YouTube video summarization. Features comprehensive monitoring, multi-database support (MongoDB, PostgreSQL, SQL Server), and flexible deployment options.
+A production-ready FastAPI application that combines intelligent image processing with AI-powered YouTube video summarization. Features comprehensive monitoring with Datadog integration, multi-database support (MongoDB, PostgreSQL, SQL Server), and flexible deployment options including Kubernetes and Synology NAS.
+
+## 📋 Prerequisites
+
+- Python 3.9 or higher
+- Docker (optional, for containerized deployment)
+- PostgreSQL, MongoDB, or SQL Server (at least one database)
+- AWS Account (for S3, Rekognition, and SES)
+- OpenAI API Key (for AI features)
+- Datadog Account (optional, for monitoring)
+- Notion Account (optional, for YouTube summaries storage)
 
 ## 🚀 Features
 
@@ -38,9 +48,14 @@ A production-ready FastAPI application that combines intelligent image processin
 ## 📋 API Endpoints
 
 ### **Image Management**
-- `GET /images?backend=mongo|postgres` - Retrieve all stored images
-- `POST /add_image?backend=mongo|postgres` - Upload and process images
-- `DELETE /delete_image/{id}?backend=mongo|postgres` - Remove images and metadata
+- `GET /images?backend=mongo|postgres|sqlserver` - Retrieve all stored images
+- `POST /add_image?backend=mongo|postgres|sqlserver` - Upload and process images
+- `DELETE /delete_image/{id}?backend=mongo|postgres|sqlserver` - Remove images and metadata
+
+### **AWS Services**
+- `POST /api/v1/upload-image-amazon/` - Upload image directly to Amazon S3
+- `DELETE /api/v1/delete-one-s3/{key}` - Delete single object from S3
+- `DELETE /api/v1/delete-all-s3` - Delete all objects from S3
 
 ### **YouTube Processing**
 - `POST /api/v1/summarize-youtube` - Generate AI summary of a single YouTube video
@@ -57,9 +72,17 @@ A production-ready FastAPI application that combines intelligent image processin
 - `GET /api/v1/postgres/get-image-postgres/{id}` - Retrieve image from PostgreSQL
 - `GET /api/v1/sqlserver/get-image-sqlserver/{id}` - Retrieve image from SQL Server
 
+### **Datadog Monitoring**
+- `GET /datadog-hello` - Datadog integration health check
+- `POST /datadog-event` - Send custom events to Datadog
+- `GET /datadog-events` - Retrieve Datadog events
+- `POST /app-event/{event_type}` - Track application-specific events
+- `POST /track-api-request` - Log API request metrics
+- `POST /bug-detection-event` - Report bug detection events
+
 ### **System & Monitoring**
 - `GET /` - Root endpoint with welcome message
-- `GET /health` - Application health status
+- `GET /health` - Application health status with detailed service checks
 - `GET /test-sqlserver` - Test SQL Server connection
 - `GET /timeout-test?timeout=N` - Performance testing endpoint
 - `POST /create_post` - Demo endpoint for external API integration
@@ -163,11 +186,12 @@ PGUSER=your-postgres-username
 PGPASSWORD=your-postgres-password
 
 # SQL Server (optional)
-SQLSERVER_HOST=your-sqlserver-host
-SQLSERVER_PORT=1433
-SQLSERVER_DATABASE=your-database-name
-SQLSERVER_USER=your-sqlserver-username
-SQLSERVER_PASSWORD=your-sqlserver-password
+SQLSERVER_ENABLED=true  # Set to false to disable
+SQLSERVERHOST=your-sqlserver-host
+SQLSERVERPORT=1433
+SQLSERVERDB=your-database-name
+SQLSERVERUSER=your-sqlserver-username
+SQLSERVERPW=your-sqlserver-password
 
 # Notion Integration (optional)
 NOTION_API_KEY=secret_your-notion-key
@@ -178,6 +202,13 @@ DD_API_KEY=your-datadog-api-key
 DD_APP_KEY=your-datadog-app-key
 DD_AGENT_HOST=192.168.1.100  # Your Datadog agent host
 DD_TRACE_AGENT_PORT=8126
+DD_PROFILING_ENABLED=true
+DD_DBM_PROPAGATION_MODE=full  # Enable DB monitoring
+
+# LLM Observability
+DD_LLMOBS_ENABLED=true
+DD_LLMOBS_ML_APP=youtube-summarizer
+DD_LLMOBS_EVALUATORS=ragas_faithfulness,ragas_context_precision,ragas_answer_relevancy
 
 # Application Configuration
 DD_SERVICE=fastapi-app
@@ -260,8 +291,23 @@ asyncio.run(batch_process_videos())
 # Interactive database setup wizard
 ./scripts/setup-databases.sh
 
-# Or run SQL scripts directly
-psql -h localhost -U username -d database_name -f sql/postgres_schema.sql
+# Quick PostgreSQL setup
+psql -h localhost -U username -d database_name -f sql/quick_setup_postgres.sql
+
+# Fix and setup PostgreSQL
+psql -h localhost -U username -d database_name -f sql/fix_and_setup_postgres.sql
+
+# SQL Server setup
+sqlcmd -S localhost -U sa -d database_name -i sql/sqlserver_schema.sql
+```
+
+### **Secret Management**
+```bash
+# Set up GitHub Secrets for CI/CD
+./scripts/setup-secrets.sh
+
+# Clear sensitive environment variables
+./scripts/clear-secrets.sh
 ```
 
 ## 🧪 Testing
@@ -276,8 +322,22 @@ pytest --cov=src
 
 # Specific test files
 pytest tests/test_basic.py
+pytest tests/test_simple.py
 pytest tests/mongo_test.py
+
+# Run test script
+./scripts/test.sh
 ```
+
+### **YouTube URL Testing**
+```bash
+# Test YouTube URL processing and transcript retrieval
+python test_youtube_urls.py
+```
+This utility tests:
+- Video ID extraction from different URL formats
+- Transcript retrieval functionality
+- Full video processing pipeline
 
 ### **Test Environment**
 Tests are designed to gracefully handle missing external services:
@@ -324,10 +384,18 @@ demo-fastapi/
 │   └── *.sql                 # Migration and setup scripts
 ├── examples/                  # Usage examples
 │   └── youtube_batch_usage.py # Batch processing examples
+├── docs/                      # Additional documentation
+│   ├── GMKTEC_MIGRATION.md   # GMKTec host migration guide
+│   ├── SQL_SERVER_SETUP.md   # SQL Server configuration guide
+│   └── YOUTUBE_BATCH_PROCESSING.md # YouTube batch processing guide
 ├── .github/workflows/         # CI/CD pipelines
 │   ├── deploy.yaml           # Main deployment workflow
-│   └── deploy-test.yaml      # Test environment deployment
-└── k8s-*.yaml                # Kubernetes deployment manifests
+│   └── datadog-security.yml  # Datadog security scanning
+├── k8s-fastapi-app.yaml      # Kubernetes application manifest
+├── k8s-datadog-agent.yaml    # Kubernetes Datadog agent manifest
+├── test_youtube_urls.py      # YouTube URL processing test utility
+├── static-analysis.datadog.yml # Datadog static analysis configuration
+└── tailscale-acl-example.json # Tailscale ACL configuration example
 ```
 
 ## 🔍 Key Application Features
@@ -349,7 +417,11 @@ demo-fastapi/
 - **Request Tracing** - Every API call tracked with Datadog APM
 - **Error Detection** - Custom events for content moderation and bug detection
 - **Performance Metrics** - CPU, memory, and response time monitoring
-- **LLM Tracking** - OpenAI usage and performance metrics
+- **LLM Observability** - OpenAI usage tracking with RAGAS evaluators for model quality assessment
+- **Database Monitoring** - APM trace correlation with database queries (DBM)
+- **Runtime Profiling** - CPU and memory profiling for performance optimization
+- **Custom Events API** - Send application-specific events to Datadog
+- **Static Analysis** - Code quality checks with Datadog's rulesets
 
 ## 🚀 Deployment Options
 
@@ -370,26 +442,47 @@ kubectl apply -f k8s-datadog-agent.yaml
 3. Import via Container Manager
 4. Configure port 9000:8080
 
+### **GitHub Actions CI/CD**
+The repository includes comprehensive CI/CD pipelines:
+- **Main Deployment** (`.github/workflows/deploy.yaml`) - Automated build and deployment with Tailscale integration
+- **Security Scanning** (`.github/workflows/datadog-security.yml`) - Static analysis and security checks
+
+### **GMKTec Host Deployment**
+Deploy to GMKTec host via Tailscale network:
+```bash
+# Using the deployment script
+./scripts/deploy.sh --gmktec
+
+# Enterprise setup
+./scripts/enterprise-setup.sh
+```
+
 ## 📊 Monitoring Dashboard
 
 Access your monitoring dashboards:
 - **Datadog APM**: Distributed tracing and performance metrics
+- **Datadog LLM Observability**: Track AI model performance and costs
 - **FastAPI Docs**: `http://localhost:8080/docs`
+- **ReDoc**: `http://localhost:8080/redoc`
 - **Health Check**: `http://localhost:8080/health`
+
+## 📖 Additional Documentation
+
+Detailed guides are available in the `docs/` directory:
+- **[GMKTec Migration Guide](docs/GMKTEC_MIGRATION.md)** - Detailed instructions for migrating to GMKTec host
+- **[SQL Server Setup Guide](docs/SQL_SERVER_SETUP.md)** - Complete SQL Server configuration and troubleshooting
+- **[YouTube Batch Processing Guide](docs/YOUTUBE_BATCH_PROCESSING.md)** - Advanced YouTube video processing strategies
 
 ## 🔒 Security Features
 
-- **Environment Variable Management** - No secrets in code
-- **CORS Configuration** - Controlled cross-origin access
-- **Content Moderation** - Automatic detection of inappropriate content
-- **Error Tracking** - Structured logging for security monitoring
-- **Container Security** - Non-root user execution
-
-## 📚 API Documentation
-
-When running locally, interactive API documentation is available:
-- **Swagger UI**: `http://localhost:8080/docs`
-- **ReDoc**: `http://localhost:8080/redoc`
+- **Environment Variable Management** - No secrets in code, comprehensive `.env` configuration
+- **CORS Configuration** - Controlled cross-origin access with configurable origins
+- **Content Moderation** - Automatic detection of inappropriate content using Amazon Rekognition
+- **Error Tracking** - Structured logging with Datadog integration for security monitoring
+- **Container Security** - Non-root user execution with PUID/PGID support
+- **Static Security Analysis** - Automated security scanning with Datadog's Python security rulesets
+- **Tailscale Integration** - Secure network access for deployments
+- **OAuth Integration** - Secure authentication for CI/CD pipelines
 
 ## 🤝 Contributing
 
