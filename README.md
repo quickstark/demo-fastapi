@@ -215,6 +215,10 @@ DD_SERVICE=fastapi-app
 DD_ENV=production
 DD_VERSION=1.0
 BUG_REPORT_EMAIL=your-email@domain.com
+
+# SonarQube Integration (optional)
+SONAR_TOKEN=your-sonarqube-token
+SONAR_HOST_URL=https://your-sonarqube-server.com
 ```
 
 ### **Optional Features**
@@ -224,6 +228,7 @@ The application gracefully handles missing services:
 - **Notion Integration**: YouTube summaries work without Notion
 - **Datadog**: Monitoring is optional for development
 - **Amazon SES**: Email notifications are optional (fallback available)
+- **SonarQube**: Code quality analysis (configured in `sonar-project.properties`)
 
 ## 🐳 Docker Configuration
 
@@ -320,6 +325,9 @@ pytest
 # With coverage
 pytest --cov=src
 
+# With Datadog Test Optimization (CI)
+pytest --ddtrace -v
+
 # Specific test files
 pytest tests/test_basic.py
 pytest tests/test_simple.py
@@ -357,9 +365,12 @@ demo-fastapi/
 ├── pytest.ini                # Test configuration
 ├── scripts/                   # Build and deployment automation
 │   ├── build.sh              # Multi-platform Docker builds
-│   ├── deploy.sh             # Production deployment
+│   ├── deploy.sh             # Production deployment with GitHub Secrets
 │   ├── setup-secrets.sh      # GitHub Secrets management
 │   ├── setup-databases.sh    # Database setup and migration helper
+│   ├── setup-runner.sh       # Self-hosted GitHub runner setup
+│   ├── setup-sonarqube-monitoring.sh # SonarQube Datadog monitoring
+│   ├── add-apm-to-sonarqube.sh      # Add APM to SonarQube
 │   └── test.sh               # Test automation
 ├── src/                       # Application modules
 │   ├── amazon.py             # AWS S3, Rekognition, SES integration
@@ -389,10 +400,18 @@ demo-fastapi/
 │   ├── SQL_SERVER_SETUP.md   # SQL Server configuration guide
 │   └── YOUTUBE_BATCH_PROCESSING.md # YouTube batch processing guide
 ├── .github/workflows/         # CI/CD pipelines
-│   ├── deploy.yaml           # Main deployment workflow
+│   ├── deploy.yaml           # GitHub-hosted deployment (manual)
+│   ├── deploy-self-hosted.yaml # Self-hosted runner deployment (auto)
 │   └── datadog-security.yml  # Datadog security scanning
+├── datadog-conf.d/           # Datadog monitoring configurations
+│   ├── docker.d/             # Docker container monitoring
+│   ├── sonarqube.d/          # SonarQube monitoring
+│   └── github_runner.yaml    # GitHub runner monitoring
 ├── k8s-fastapi-app.yaml      # Kubernetes application manifest
 ├── k8s-datadog-agent.yaml    # Kubernetes Datadog agent manifest
+├── docker-compose.sonarqube-with-apm.yml # SonarQube with APM config
+├── sonar-project.properties  # SonarQube project configuration
+├── runner.env.example        # GitHub runner environment template
 ├── test_youtube_urls.py      # YouTube URL processing test utility
 ├── static-analysis.datadog.yml # Datadog static analysis configuration
 └── tailscale-acl-example.json # Tailscale ACL configuration example
@@ -446,17 +465,29 @@ kubectl apply -f k8s-datadog-agent.yaml
 ### **GitHub Actions CI/CD**
 The repository includes comprehensive CI/CD pipelines:
 - **Self-Hosted Runner** (`.github/workflows/deploy-self-hosted.yaml`) - Optimized for GMKTec local deployment
-- **GitHub-Hosted Runner** (`.github/workflows/deploy.yaml`) - Cloud-based fallback option
+- **GitHub-Hosted Runner** (`.github/workflows/deploy.yaml`) - Cloud-based fallback option (manual trigger only)
 - **Security Scanning** (`.github/workflows/datadog-security.yml`) - Static analysis and security checks
-- **Code Quality** - SonarQube integration for code analysis and quality gates
-- **Runner Setup Guide** - See [RUNNER_SETUP.md](RUNNER_SETUP.md) for configuration
-- **Migration Guide** - See [RUNNER_MIGRATION.md](RUNNER_MIGRATION.md) for upgrading existing runners
+- **Code Quality** - SonarQube integration for automated code analysis on every push
+- **Runner Setup Script** - Use `scripts/setup-runner.sh` for easy self-hosted runner configuration
+- **Runner Environment** - Configure with `runner.env.example` for Docker-based GitHub runner
 
 ### **GMKTec Local Deployment**
 With the self-hosted runner on GMKTec, deployment is automatic on push to main:
 - Port 9000 for production
 - Local Docker deployment
 - No SSH or Tailscale needed
+
+#### Self-Hosted Runner Setup
+```bash
+# Quick setup for self-hosted runner
+cp runner.env.example .env.runner
+# Edit .env.runner with your GitHub token and Docker group ID (988 for GMKTec)
+
+# Run the setup script
+./scripts/setup-runner.sh
+
+# Choose option 2 to start the runner
+```
 
 For manual deployment:
 ```bash
@@ -472,9 +503,23 @@ gh workflow run deploy-self-hosted.yaml
 Access your monitoring dashboards:
 - **Datadog APM**: Distributed tracing and performance metrics
 - **Datadog LLM Observability**: Track AI model performance and costs
+- **SonarQube**: Code quality metrics at your configured SonarQube instance
 - **FastAPI Docs**: `http://localhost:8080/docs`
 - **ReDoc**: `http://localhost:8080/redoc`
 - **Health Check**: `http://localhost:8080/health`
+
+### **SonarQube Integration**
+The project is configured for SonarQube analysis:
+- Automatic analysis on every push (GitHub Actions)
+- Configured exclusions for test and migration files
+- Python 3.9-3.12 compatibility
+- Optional APM monitoring (see `docker-compose.sonarqube-with-apm.yml`)
+
+### **Infrastructure Monitoring**
+Datadog monitoring configurations available in `datadog-conf.d/`:
+- Docker container monitoring (`docker.d/`)
+- SonarQube monitoring via HTTP checks and JMX (`sonarqube.d/`)
+- GitHub runner process monitoring (`github_runner.yaml`)
 
 ## 📖 Additional Documentation
 
@@ -482,7 +527,6 @@ Detailed guides are available in the `docs/` directory:
 - **[GMKTec Migration Guide](docs/GMKTEC_MIGRATION.md)** - Detailed instructions for migrating to GMKTec host
 - **[SQL Server Setup Guide](docs/SQL_SERVER_SETUP.md)** - Complete SQL Server configuration and troubleshooting
 - **[YouTube Batch Processing Guide](docs/YOUTUBE_BATCH_PROCESSING.md)** - Advanced YouTube video processing strategies
-- **[SonarQube Setup Guide](SONARQUBE_SETUP.md)** - Code quality analysis configuration and usage
 
 ## 🔒 Security Features
 
@@ -492,8 +536,9 @@ Detailed guides are available in the `docs/` directory:
 - **Error Tracking** - Structured logging with Datadog integration for security monitoring
 - **Container Security** - Non-root user execution with PUID/PGID support
 - **Static Security Analysis** - Automated security scanning with Datadog's Python security rulesets
-- **Tailscale Integration** - Secure network access for deployments
+- **Tailscale Support** - Optional secure network access for remote deployments
 - **OAuth Integration** - Secure authentication for CI/CD pipelines
+- **Local Deployment** - Self-hosted runner supports local deployment without network exposure
 
 ## 🤝 Contributing
 
