@@ -184,4 +184,11 @@ node_modules/
 # OS specific
 .DS_Store
 # Task files
-tasks.json 
+tasks.json
+
+# GitHub Runner
+.env.runner
+runner-data/
+runner-cache/
+runner-tools/
+tailscale-state/ 

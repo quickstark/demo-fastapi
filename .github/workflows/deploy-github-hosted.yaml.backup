@@ -1,9 +1,6 @@
-name: Build and Deploy (GitHub-Hosted)
+name: Build and Deploy (GitHub-Hosted - BACKUP)
 on:
-  # Disabled automatic trigger - use self-hosted runner workflow instead
-  # push:
-  #   branches: [ main ]
-  workflow_dispatch:  # Manual trigger only
+  workflow_dispatch:  # Only manual trigger, not on push
     inputs:
       environment:
         description: 'Environment to deploy to'

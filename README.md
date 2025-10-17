@@ -444,17 +444,25 @@ kubectl apply -f k8s-datadog-agent.yaml
 
 ### **GitHub Actions CI/CD**
 The repository includes comprehensive CI/CD pipelines:
-- **Main Deployment** (`.github/workflows/deploy.yaml`) - Automated build and deployment with Tailscale integration
+- **Self-Hosted Runner** (`.github/workflows/deploy-self-hosted.yaml`) - Optimized for GMKTec local deployment
+- **GitHub-Hosted Runner** (`.github/workflows/deploy.yaml`) - Cloud-based fallback option
 - **Security Scanning** (`.github/workflows/datadog-security.yml`) - Static analysis and security checks
+- **Runner Setup Guide** - See [RUNNER_SETUP.md](RUNNER_SETUP.md) for configuration
+- **Migration Guide** - See [RUNNER_MIGRATION.md](RUNNER_MIGRATION.md) for upgrading existing runners
 
-### **GMKTec Host Deployment**
-Deploy to GMKTec host via Tailscale network:
+### **GMKTec Local Deployment**
+With the self-hosted runner on GMKTec, deployment is automatic on push to main:
+- Port 9000 for production
+- Local Docker deployment
+- No SSH or Tailscale needed
+
+For manual deployment:
 ```bash
 # Using the deployment script
-./scripts/deploy.sh --gmktec
+./scripts/deploy.sh --local
 
-# Enterprise setup
-./scripts/enterprise-setup.sh
+# Or trigger workflow manually
+gh workflow run deploy-self-hosted.yaml
 ```
 
 ## 📊 Monitoring Dashboard

@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  runner:
+    image: ghcr.io/kevmo314/docker-gha-runner:main
+    container_name: github-runner
+    hostname: github-runner-ubuntu
+    restart: always
+    deploy:
+      mode: replicated
+      replicas: 1
+    environment:
+      # GitHub Configuration
+      REPOSITORY: quickstark/demo-fastapi
+      ACCESS_TOKEN: ${GITHUB_ACCESS_TOKEN}  # Move token to .env file for security
+      RUNNER_NAME: ubuntu-self-hosted
+      RUNNER_WORKDIR: /tmp/runner/work
+      RUNNER_GROUP: default
+      LABELS: self-hosted,linux,x64,ubuntu,docker
+      
+      # Optional: Runner configuration
+      EPHEMERAL: "false"  # Set to true if you want ephemeral runners
+      DISABLE_AUTO_UPDATE: "false"
+      
+    volumes:
+      # CRITICAL: Mount Docker socket for Docker-in-Docker capability
+      - /var/run/docker.sock:/var/run/docker.sock
+      
+      # Optional: Mount host Docker config for registry authentication
+      - ${HOME}/.docker:/root/.docker:ro
+      
+      # Optional: Cache directories for better performance
+      - runner-cache:/tmp/runner/work
+      - runner-tools:/opt/hostedtoolcache
+      
+      # Optional: If you need to access host files
+      # - ./:/workspace:ro
+      
+      # Optional: SSH keys for deployment (if not using GitHub Secrets)
+      # - ${HOME}/.ssh:/root/.ssh:ro
+      
+    # Add user to docker group (GMKTec uses 988)
+    group_add:
+      - ${DOCKER_GROUP_ID:-988}  # Docker group on GMKTec is 988
+    
+    # Network configuration
+    networks:
+      - runner-network
+    
+    # Resource limits (adjust based on your needs)
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '2'
+    #       memory: 4G
+    #     reservations:
+    #       cpus: '1'
+    #       memory: 2G
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "Runner.Listener"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Note: Tailscale not needed since runner and app are on the same machine
+
+networks:
+  runner-network:
+    driver: bridge
+
+volumes:
+  runner-cache:
+    driver: local
+  runner-tools:
+    driver: local
