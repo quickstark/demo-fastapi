@@ -1,0 +1,35 @@
+# GitHub Runner Container Monitoring for Datadog
+# Place this file in /etc/datadog-agent/conf.d/ on your Datadog agent container
+
+init_config:
+
+instances:
+  # Monitor the GitHub runner container
+  - name: github_runner
+    # Use Docker integration to monitor the container
+    # The Datadog agent will automatically discover and monitor Docker containers
+    
+    # Add custom tags for the runner
+    tags:
+      - service:github-runner
+      - env:production
+      - runner:self-hosted
+      - host:gmktec
+
+# Monitor container metrics via Docker integration
+# Ensure your Datadog agent has these environment variables:
+# DD_DOCKER_LABELS_AS_TAGS=true
+# DD_CONTAINER_INCLUDE="name:github-runner"
+
+---
+# Alternative: Use process check to monitor runner process
+init_config:
+
+instances:
+  - name: github_runner_process
+    search_string:
+      - "Runner.Listener"  # GitHub Actions runner process
+    exact_match: false
+    tags:
+      - service:github-runner
+      - component:runner-listener

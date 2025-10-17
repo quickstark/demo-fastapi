@@ -421,7 +421,8 @@ demo-fastapi/
 - **Database Monitoring** - APM trace correlation with database queries (DBM)
 - **Runtime Profiling** - CPU and memory profiling for performance optimization
 - **Custom Events API** - Send application-specific events to Datadog
-- **Static Analysis** - Code quality checks with Datadog's rulesets
+- **Code Quality** - SonarQube analysis for bugs, vulnerabilities, and code smells
+- **Static Analysis** - Datadog and SonarQube code quality checks
 
 ## 🚀 Deployment Options
 
@@ -447,6 +448,7 @@ The repository includes comprehensive CI/CD pipelines:
 - **Self-Hosted Runner** (`.github/workflows/deploy-self-hosted.yaml`) - Optimized for GMKTec local deployment
 - **GitHub-Hosted Runner** (`.github/workflows/deploy.yaml`) - Cloud-based fallback option
 - **Security Scanning** (`.github/workflows/datadog-security.yml`) - Static analysis and security checks
+- **Code Quality** - SonarQube integration for code analysis and quality gates
 - **Runner Setup Guide** - See [RUNNER_SETUP.md](RUNNER_SETUP.md) for configuration
 - **Migration Guide** - See [RUNNER_MIGRATION.md](RUNNER_MIGRATION.md) for upgrading existing runners
 
@@ -480,6 +482,7 @@ Detailed guides are available in the `docs/` directory:
 - **[GMKTec Migration Guide](docs/GMKTEC_MIGRATION.md)** - Detailed instructions for migrating to GMKTec host
 - **[SQL Server Setup Guide](docs/SQL_SERVER_SETUP.md)** - Complete SQL Server configuration and troubleshooting
 - **[YouTube Batch Processing Guide](docs/YOUTUBE_BATCH_PROCESSING.md)** - Advanced YouTube video processing strategies
+- **[SonarQube Setup Guide](SONARQUBE_SETUP.md)** - Code quality analysis configuration and usage
 
 ## 🔒 Security Features
 

@@ -1,0 +1,39 @@
+# Docker Integration Configuration for Datadog
+# This monitors all Docker containers including the GitHub runner
+
+init_config:
+
+instances:
+  - name: docker
+    # Collect container metrics
+    collect_container_size: true
+    collect_container_count: true
+    collect_cpu_limit: true
+    collect_images_stats: true
+    collect_disk_stats: true
+    collect_volume_count: true
+    
+    # Include specific containers
+    include:
+      - name: github-runner
+      - name: images-api
+      - image: ghcr.io/kevmo314/docker-gha-runner
+      - image: quickstark/api-images
+    
+    # Exclude Datadog agent itself
+    exclude:
+      - name: datadog-agent
+    
+    # Tag containers
+    tags:
+      - environment:production
+      - host:gmktec
+      
+    # Performance metrics
+    collect_events: true
+    collect_container_lifecycle_events: true
+    
+    # Custom labels to tags mapping
+    docker_labels_as_tags:
+      "deployment.source": "deployment_source"
+      "deployment.timestamp": "deployment_time"
