@@ -1,0 +1,84 @@
+# SonarQube JMX Integration for Datadog
+# This monitors your SonarQube instance via JMX metrics
+
+init_config:
+  # JMX connection settings
+  is_jmx: true
+  collect_default_metrics: true
+  
+  # Additional JMX metrics to collect (optional)
+  conf:
+    - include:
+        domain: SonarQube
+        attribute:
+          - DbConnectionState
+          - ComputeEngineTasks
+          - ServerVersion
+          - Health
+    - include:
+        domain: java.lang
+        type: Memory
+        attribute:
+          - HeapMemoryUsage.used
+          - HeapMemoryUsage.max
+          - NonHeapMemoryUsage.used
+    - include:
+        domain: java.lang
+        type: Threading
+        attribute:
+          - ThreadCount
+          - PeakThreadCount
+    - include:
+        domain: java.lang
+        type: GarbageCollector
+        attribute:
+          - CollectionCount
+          - CollectionTime
+
+instances:
+  - name: sonarqube
+    host: sonarqube  # Your container name or IP
+    port: 9000        # SonarQube web port (not JMX port)
+    
+    # JMX Configuration
+    # Note: You need to enable JMX in your SonarQube container
+    jmx_url: "service:jmx:rmi:///jndi/rmi://sonarqube:10443/jmxrmi"
+    
+    # Alternative: Use process regex if JMX is not available
+    # process_name_regex: .*sonarqube.*
+    
+    # Connection settings
+    timeout: 10
+    refresh_beans: 60  # Refresh JMX beans every 60 seconds
+    
+    # Authentication (if required)
+    # user: monitoring
+    # password: your_jmx_password
+    
+    # Tags
+    tags:
+      - env:homelab
+      - service:sonarqube
+      - instance:production
+    
+    # Metrics to collect
+    collect_default_jvm_metrics: true
+    
+    # Custom metrics (SonarQube specific)
+    metrics:
+      - name: sonarqube.compute_engine.tasks.pending
+        path: SonarQube:name=ComputeEngineTasks,type=ComputeEngine
+        attribute: PendingCount
+        metric_type: gauge
+      - name: sonarqube.compute_engine.tasks.failed
+        path: SonarQube:name=ComputeEngineTasks,type=ComputeEngine
+        attribute: FailedCount
+        metric_type: counter
+      - name: sonarqube.database.pool.active_connections
+        path: SonarQube:name=Database
+        attribute: PoolActiveConnections
+        metric_type: gauge
+      - name: sonarqube.database.pool.idle_connections
+        path: SonarQube:name=Database
+        attribute: PoolIdleConnections
+        metric_type: gauge

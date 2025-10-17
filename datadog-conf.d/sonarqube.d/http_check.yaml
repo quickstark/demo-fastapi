@@ -1,0 +1,63 @@
+# Alternative: HTTP-based monitoring for SonarQube
+# Use this if JMX monitoring is not working
+
+init_config:
+
+instances:
+  # Web UI Health Check
+  - name: sonarqube_web_health
+    url: http://sonarqube:9000/api/system/health
+    method: GET
+    timeout: 10
+    
+    # Check for specific response content
+    content_match: '"health":"GREEN"'
+    
+    # Expected HTTP status
+    http_response_status_code: 200
+    
+    # Tags
+    tags:
+      - env:homelab
+      - service:sonarqube
+      - check:health
+  
+  # API Status Check
+  - name: sonarqube_api_status
+    url: http://sonarqube:9000/api/system/status
+    method: GET
+    timeout: 10
+    
+    # Check for UP status
+    content_match: '"status":"UP"'
+    
+    # Expected HTTP status
+    http_response_status_code: 200
+    
+    # Tags
+    tags:
+      - env:homelab
+      - service:sonarqube
+      - check:api
+  
+  # Database Connection Check
+  - name: sonarqube_database
+    url: http://sonarqube:9000/api/system/db_migration_status
+    method: GET
+    timeout: 10
+    
+    # Authentication if needed
+    # username: admin
+    # password: your_password
+    # Or use token:
+    # headers:
+    #   Authorization: "Basic <base64_encoded_token>"
+    
+    # Expected HTTP status
+    http_response_status_code: 200
+    
+    # Tags
+    tags:
+      - env:homelab
+      - service:sonarqube
+      - check:database

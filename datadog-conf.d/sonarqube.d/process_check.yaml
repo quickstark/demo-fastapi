@@ -1,0 +1,25 @@
+# Simple Process-based monitoring for SonarQube
+# This is the most reliable method if JMX is not available
+
+init_config:
+
+instances:
+  - name: sonarqube_process
+    search_string: ['sonarqube', 'sonar.application']  # Process name patterns to search
+    
+    # Use exact match to avoid false positives
+    exact_match: false
+    
+    # Collect metrics
+    collect_children: true
+    
+    # Thresholds for alerting
+    thresholds:
+      critical: [1, 1]  # Alert if not exactly 1 process
+      warning: [1, 2]   # Warn if more than 2 processes
+    
+    # Tags
+    tags:
+      - env:homelab
+      - service:sonarqube
+      - check:process
