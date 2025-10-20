@@ -27,6 +27,31 @@ dotenv_path = os.path.join(APP_ROOT, '.env')
 load_dotenv(dotenv_path)
 logger.info("Environment variables loaded from .env")
 
+# Load version from VERSION file
+def get_version():
+    """Read version from VERSION file, fallback to environment variable or default."""
+    try:
+        version_file = os.path.join(APP_ROOT, 'VERSION')
+        if os.path.exists(version_file):
+            with open(version_file, 'r') as f:
+                version = f.read().strip()
+                logger.info(f"Loaded version from VERSION file: {version}")
+                return version
+    except Exception as e:
+        logger.warning(f"Could not read VERSION file: {e}")
+
+    # Fallback to environment variable or default
+    version = os.getenv('DD_VERSION', '1.0.0')
+    logger.info(f"Using version from environment or default: {version}")
+    return version
+
+# Set the application version
+APP_VERSION = get_version()
+# Override DD_VERSION environment variable if not set
+if 'DD_VERSION' not in os.environ:
+    os.environ['DD_VERSION'] = APP_VERSION
+    logger.info(f"Set DD_VERSION environment variable to: {APP_VERSION}")
+
 # Define CustomError class for application-specific exceptions
 class CustomError(Exception):
     """Custom exception class for application-specific errors."""
@@ -568,14 +593,14 @@ async def root():
 async def health_check():
     """
     Health check endpoint for deployment verification.
-    
+
     Returns:
         dict: Health status and basic application info.
     """
     return {
         "status": "healthy",
         "service": os.getenv('DD_SERVICE', 'fastapi-app'),
-        "version": os.getenv('DD_VERSION', '1.0'),
+        "version": APP_VERSION,
         "environment": os.getenv('DD_ENV', 'dev')
     }
 

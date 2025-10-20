@@ -18,12 +18,20 @@ on:
 jobs:
   build-and-deploy:
     runs-on: self-hosted
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Required for SonarQube analysis
+
+      # Read VERSION file for semantic versioning
+      - name: Read VERSION
+        id: version
+        run: |
+          VERSION=$(cat VERSION | tr -d '[:space:]')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Deployment Version: $VERSION"
       
       # ===== SonarQube Analysis with Timing Metrics =====
       - name: SonarQube Analysis with Timing Metrics
@@ -294,7 +302,7 @@ jobs:
             --add-host=host.docker.internal:host-gateway \
             -e DD_SERVICE="${{ secrets.DD_SERVICE }}" \
             -e DD_ENV="${{ secrets.DD_ENV }}" \
-            -e DD_VERSION="${{ github.sha }}" \
+            -e DD_VERSION="${{ steps.version.outputs.version }}" \
             -e DD_AGENT_HOST="${{ secrets.DD_AGENT_HOST || 'host.docker.internal' }}" \
             -e DD_PROFILING_ENABLED=true \
             -e DD_PROFILING_TIMELINE_ENABLED=true \
@@ -366,34 +374,45 @@ jobs:
         if: success()
         continue-on-error: true
         run: |
+          # Get short SHA for reference
+          SHORT_SHA="${{ github.sha }}"
+          SHORT_SHA="${SHORT_SHA:0:7}"
+
+          echo "📦 Marking deployment with version: ${{ steps.version.outputs.version }}"
+          echo "🔖 Git SHA: $SHORT_SHA"
+
           # First try with existing datadog-ci if available
           if command -v datadog-ci &> /dev/null; then
             datadog-ci deployment mark \
               --env "${{ secrets.DD_ENV }}" \
               --service "${{ secrets.DD_SERVICE }}" \
-              --revision "${{ github.sha }}" \
+              --revision "${{ steps.version.outputs.version }}" \
               --tags "deployment_method:self_hosted" \
               --tags "repository:${{ github.repository }}" \
               --tags "branch:${{ github.ref_name }}" \
+              --tags "git_sha:$SHORT_SHA" \
               --no-fail || true
           # Otherwise try to install it locally (not globally)
           elif command -v npm &> /dev/null; then
             # Install locally to avoid permission issues
             npm install @datadog/datadog-ci 2>/dev/null || true
-            
+
             if [ -f "$(pwd)/node_modules/.bin/datadog-ci" ]; then
               $(pwd)/node_modules/.bin/datadog-ci deployment mark \
                 --env "${{ secrets.DD_ENV }}" \
                 --service "${{ secrets.DD_SERVICE }}" \
-                --revision "${{ github.sha }}" \
+                --revision "${{ steps.version.outputs.version }}" \
                 --tags "deployment_method:self_hosted" \
                 --tags "repository:${{ github.repository }}" \
                 --tags "branch:${{ github.ref_name }}" \
+                --tags "git_sha:$SHORT_SHA" \
                 --no-fail || true
             fi
           else
-            echo "Datadog CI not available, skipping deployment marking"
+            echo "⚠️  Datadog CI not available, skipping deployment marking"
           fi
+
+          echo "✅ Deployment marked in Datadog with version ${{ steps.version.outputs.version }}"
       
       - name: Post Checkout code
         run: |
