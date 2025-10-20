@@ -230,6 +230,43 @@ The application gracefully handles missing services:
 - **Amazon SES**: Email notifications are optional (fallback available)
 - **SonarQube**: Code quality analysis (configured in `sonar-project.properties`)
 
+### **Database Management**
+
+#### Toggle SQL Server
+```bash
+# Enable SQL Server
+SQLSERVER_ENABLED=true
+
+# Disable SQL Server (faster startup, no SQL Server dependency)
+SQLSERVER_ENABLED=false
+```
+
+#### Check Database Status
+```bash
+# View status of all databases
+curl http://localhost:8000/api/v1/database-status
+
+# View configuration (without passwords)
+curl http://localhost:8000/api/v1/database-config
+
+# Test SQL Server connection specifically
+curl http://localhost:8000/test-sqlserver
+```
+
+#### Use Different Backends
+```bash
+# Get images from PostgreSQL
+curl "http://localhost:8000/images?backend=postgres"
+
+# Get images from MongoDB
+curl "http://localhost:8000/images?backend=mongo"
+
+# Get images from SQL Server
+curl "http://localhost:8000/images?backend=sqlserver"
+```
+
+See [`docs/DATABASE_CONFIGURATION.md`](docs/DATABASE_CONFIGURATION.md) for complete database configuration guide.
+
 ## 🐳 Docker Configuration
 
 ### **Dockerfile Features**
