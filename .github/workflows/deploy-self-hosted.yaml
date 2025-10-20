@@ -29,8 +29,14 @@ jobs:
       
       - name: 🔍 SonarQube - Code Analysis
         id: sonar_scan
-        if: ${{ secrets.SONAR_TOKEN != '' && secrets.SONAR_HOST_URL != '' }}
         run: |
+          # Check if SonarQube credentials are configured
+          if [ -z "${{ secrets.SONAR_TOKEN }}" ] || [ -z "${{ secrets.SONAR_HOST_URL }}" ]; then
+            echo "⚠️  SonarQube credentials not configured - skipping analysis"
+            echo "sonar_skipped=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
           echo "Running SonarQube analysis in Docker container..."
           docker run --rm \
             -e SONAR_HOST_URL="${{ secrets.SONAR_HOST_URL }}" \
@@ -52,8 +58,13 @@ jobs:
       
       - name: 📊 SonarQube - Fetch Metrics
         id: sonar_metrics
-        if: ${{ steps.sonar_scan.outputs.sonar_failed != 'true' && secrets.SONAR_TOKEN != '' }}
         run: |
+          # Skip if SonarQube was skipped or failed
+          if [ "${{ steps.sonar_scan.outputs.sonar_skipped }}" = "true" ] || [ "${{ steps.sonar_scan.outputs.sonar_failed }}" = "true" ]; then
+            echo "Skipping metrics fetch"
+            exit 0
+          fi
+          
           echo "Fetching SonarQube metrics..."
           sleep 5  # Wait for SonarQube to process
           
@@ -93,8 +104,13 @@ jobs:
         continue-on-error: true
       
       - name: ✅ SonarQube - Quality Gate Check
-        if: ${{ steps.sonar_scan.outputs.sonar_failed != 'true' && secrets.SONAR_TOKEN != '' }}
         run: |
+          # Skip if SonarQube was skipped or failed
+          if [ "${{ steps.sonar_scan.outputs.sonar_skipped }}" = "true" ] || [ "${{ steps.sonar_scan.outputs.sonar_failed }}" = "true" ]; then
+            echo "Skipping quality gate check"
+            exit 0
+          fi
+          
           echo "Checking Quality Gate status..."
           
           PROJECT_KEY="quickstark_demo-fastapi_6ba235ba-ff96-459d-8607-919121b2ad98"
