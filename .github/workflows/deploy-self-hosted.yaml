@@ -31,32 +31,25 @@ jobs:
         with:
           fetch-depth: 0  # Required for SonarQube analysis
       
-      # Install dependencies for SonarQube (if not present)
-      - name: Install SonarQube Dependencies
-        run: |
-          # Check if unzip is available, install if not
-          if ! command -v unzip &> /dev/null; then
-            echo "Installing unzip for SonarQube scanner..."
-            if command -v apt-get &> /dev/null; then
-              sudo apt-get update && sudo apt-get install -y unzip
-            elif command -v apk &> /dev/null; then
-              apk add --no-cache unzip
-            elif command -v yum &> /dev/null; then
-              sudo yum install -y unzip
-            else
-              echo "Warning: Cannot install unzip - SonarQube scan may fail"
-            fi
-          else
-            echo "unzip is already available"
-          fi
-        continue-on-error: true
-      
-      # SonarQube Code Analysis
+      # SonarQube Code Analysis (using Docker - no dependencies needed)
       - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@v6
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: |
+          if [ -n "${{ secrets.SONAR_TOKEN }}" ] && [ -n "${{ secrets.SONAR_HOST_URL }}" ]; then
+            echo "Running SonarQube analysis in Docker container..."
+            docker run --rm \
+              -e SONAR_HOST_URL="${{ secrets.SONAR_HOST_URL }}" \
+              -e SONAR_TOKEN="${{ secrets.SONAR_TOKEN }}" \
+              -v "$(pwd):/usr/src" \
+              sonarsource/sonar-scanner-cli \
+              -Dsonar.projectKey=quickstark_demo-fastapi_6ba235ba-ff96-459d-8607-919121b2ad98 \
+              -Dsonar.sources=main.py,src \
+              -Dsonar.tests=tests \
+              -Dsonar.language=py \
+              -Dsonar.python.version=3.9,3.10,3.11,3.12 \
+              -Dsonar.sourceEncoding=UTF-8 || echo "⚠️  SonarQube scan failed - continuing deployment"
+          else
+            echo "⚠️  SonarQube credentials not configured - skipping analysis"
+          fi
         continue-on-error: true  # Don't fail deployment if SonarQube is unavailable
       
       - name: System Information
@@ -219,6 +212,7 @@ jobs:
             -e PGDATABASE="${{ secrets.PGDATABASE }}" \
             -e PGUSER="${{ secrets.PGUSER }}" \
             -e PGPASSWORD="${{ secrets.PGPASSWORD }}" \
+            -e SQLSERVER_ENABLED="${{ secrets.SQLSERVER_ENABLED || 'true' }}" \
             -e SQLSERVERHOST="${{ secrets.SQLSERVERHOST }}" \
             -e SQLSERVERPORT="${{ secrets.SQLSERVERPORT }}" \
             -e SQLSERVERUSER="${{ secrets.SQLSERVERUSER }}" \
