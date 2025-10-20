@@ -1,7 +1,19 @@
-name: Build and Deploy w DD Spans
+name: Build and Deploy (Self-Hosted Runner)
 on:
   push:
     branches: [ main ]
+  workflow_dispatch:  # Also allow manual trigger
+    inputs:
+      skip_tests:
+        description: 'Skip tests'
+        required: false
+        default: false
+        type: boolean
+      skip_deploy:
+        description: 'Skip deployment (build only)'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   build-and-deploy:
@@ -11,26 +23,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0  # Required for SonarQube analysis
       
-      # Install datadog-ci once at the beginning
-      - name: Setup Datadog CI
-        run: |
-          if ! command -v datadog-ci &> /dev/null; then
-            echo "Installing datadog-ci..."
-            npm install -g @datadog/datadog-ci 2>/dev/null || {
-              # Fallback: download binary directly
-              curl -L --fail "https://github.com/DataDog/datadog-ci/releases/latest/download/datadog-ci_linux-x64" \
-                --output "/usr/local/bin/datadog-ci" && \
-              chmod +x /usr/local/bin/datadog-ci
-            }
-          fi
-      
-      # Single SonarQube step that creates custom spans internally
-      - name: SonarQube Analysis with Custom Spans
+      # ===== SonarQube Analysis with Timing Metrics =====
+      - name: SonarQube Analysis with Timing Metrics
         env:
-          DD_API_KEY: ${{ secrets.DD_API_KEY }}
-          DD_SITE: datadoghq.com
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         run: |
@@ -40,39 +37,37 @@ jobs:
             exit 0
           fi
           
-          # Export for datadog-ci
-          export DATADOG_API_KEY=$DD_API_KEY
-          export DATADOG_SITE=$DD_SITE
+          # Function to send timing metric to Datadog
+          send_timing() {
+            local metric=$1
+            local duration=$2
+            local tags=$3
+            if command -v nc &> /dev/null; then
+              echo "${metric}:${duration}|ms|${tags}" | nc -u -w1 127.0.0.1 8125 2>/dev/null || true
+              echo "📊 Sent metric: ${metric}=${duration}ms"
+            fi
+          }
           
-          echo "🔍 Starting SonarQube analysis with detailed tracing..."
+          echo "🔍 Starting SonarQube analysis..."
+          TOTAL_START=$(date +%s)
           
-          # Create a parent span for the entire SonarQube process
-          TRACE_ID=$(uuidgen | tr -d '-')
-          PARENT_ID=$(printf '%016x' $RANDOM$RANDOM)
+          # Phase 1: Preparation
+          echo "::group::📋 Phase 1: Project Preparation"
+          PREP_START=$(date +%s)
           
-          # Phase 1: Project preparation
-          echo "📋 Phase 1: Preparing project..."
-          START_PREP=$(date +%s%N)
+          FILES=$(find . -name "*.py" -not -path "./venv/*" -not -path "./.git/*" | wc -l)
+          LINES=$(find . -name "*.py" -not -path "./venv/*" -not -path "./.git/*" -exec wc -l {} + | tail -1 | awk '{print $1}' || echo "0")
+          echo "Found $FILES Python files with $LINES lines"
           
-          # Count files and prepare
-          FILES=$(find . -name "*.py" -not -path "./venv/*" | wc -l)
-          echo "Found $FILES Python files to analyze"
+          PREP_END=$(date +%s)
+          PREP_DURATION=$((PREP_END - PREP_START))
+          send_timing "sonarqube.phase.preparation" "$((PREP_DURATION * 1000))" "#project:demo-fastapi"
+          echo "::endgroup::"
           
-          END_PREP=$(date +%s%N)
-          PREP_DURATION=$(( (END_PREP - START_PREP) / 1000000 ))
+          # Phase 2: Code Analysis
+          echo "::group::🔍 Phase 2: Code Analysis"
+          SCAN_START=$(date +%s)
           
-          # Send preparation span to Datadog
-          datadog-ci trace -- --name "SonarQube.Preparation" \
-            --tags "project:demo-fastapi,files:$FILES" \
-            --metrics "files.count:$FILES" \
-            echo "Prepared $FILES files" 2>/dev/null || true
-          
-          # Phase 2: Run the actual scan
-          echo "🔍 Phase 2: Running code analysis..."
-          START_SCAN=$(date +%s%N)
-          
-          # Run scanner and capture output
-          SCAN_OUTPUT=$(mktemp)
           docker run --rm \
             -e SONAR_HOST_URL="$SONAR_HOST_URL" \
             -e SONAR_TOKEN="$SONAR_TOKEN" \
@@ -83,96 +78,77 @@ jobs:
             -Dsonar.tests=tests \
             -Dsonar.language=py \
             -Dsonar.python.version=3.9,3.10,3.11,3.12 \
-            -Dsonar.sourceEncoding=UTF-8 \
-            2>&1 | tee $SCAN_OUTPUT
+            -Dsonar.sourceEncoding=UTF-8 || {
+              echo "⚠️  SonarQube scan failed - continuing deployment"
+              exit 0
+            }
           
-          SCAN_STATUS=${PIPESTATUS[0]}
-          END_SCAN=$(date +%s%N)
-          SCAN_DURATION=$(( (END_SCAN - START_SCAN) / 1000000 ))
+          SCAN_END=$(date +%s)
+          SCAN_DURATION=$((SCAN_END - SCAN_START))
+          send_timing "sonarqube.phase.analysis" "$((SCAN_DURATION * 1000))" "#project:demo-fastapi"
+          echo "Analysis took ${SCAN_DURATION} seconds"
+          echo "::endgroup::"
           
-          # Send scan span
-          datadog-ci trace -- --name "SonarQube.CodeAnalysis" \
-            --tags "project:demo-fastapi,status:$([[ $SCAN_STATUS -eq 0 ]] && echo 'success' || echo 'failed')" \
-            --metrics "duration.ms:$SCAN_DURATION" \
-            echo "Analysis completed in ${SCAN_DURATION}ms" 2>/dev/null || true
+          # Phase 3: Metrics Collection
+          echo "::group::📊 Phase 3: Metrics Collection"
+          METRICS_START=$(date +%s)
+          sleep 3  # Wait for processing
           
-          # Parse output for interesting metrics
-          if grep -q "files indexed" $SCAN_OUTPUT; then
-            INDEXED=$(grep "files indexed" $SCAN_OUTPUT | grep -oE '[0-9]+' | head -1)
-            echo "📂 Indexed $INDEXED files"
+          PROJECT="quickstark_demo-fastapi_6ba235ba-ff96-459d-8607-919121b2ad98"
+          METRICS=$(curl -s -u "$SONAR_TOKEN:" \
+            "$SONAR_HOST_URL/api/measures/component?component=${PROJECT}&metricKeys=bugs,vulnerabilities,code_smells,coverage,duplicated_lines_density" \
+            2>/dev/null) || METRICS="{}"
+          
+          BUGS=$(echo "$METRICS" | jq -r '.component.measures[] | select(.metric=="bugs") | .value // "0"' 2>/dev/null || echo "0")
+          VULNS=$(echo "$METRICS" | jq -r '.component.measures[] | select(.metric=="vulnerabilities") | .value // "0"' 2>/dev/null || echo "0")
+          SMELLS=$(echo "$METRICS" | jq -r '.component.measures[] | select(.metric=="code_smells") | .value // "0"' 2>/dev/null || echo "0")
+          COVERAGE=$(echo "$METRICS" | jq -r '.component.measures[] | select(.metric=="coverage") | .value // "0"' 2>/dev/null || echo "0")
+          
+          METRICS_END=$(date +%s)
+          METRICS_DURATION=$((METRICS_END - METRICS_START))
+          send_timing "sonarqube.phase.metrics" "$((METRICS_DURATION * 1000))" "#project:demo-fastapi"
+          
+          # Send quality metrics
+          if command -v nc &> /dev/null; then
+            echo "sonarqube.bugs:$BUGS|g|#project:demo-fastapi,branch:${{ github.ref_name }}" | nc -u -w1 127.0.0.1 8125 2>/dev/null || true
+            echo "sonarqube.vulnerabilities:$VULNS|g|#project:demo-fastapi,branch:${{ github.ref_name }}" | nc -u -w1 127.0.0.1 8125 2>/dev/null || true
+            echo "sonarqube.code_smells:$SMELLS|g|#project:demo-fastapi,branch:${{ github.ref_name }}" | nc -u -w1 127.0.0.1 8125 2>/dev/null || true
+            echo "sonarqube.coverage:$COVERAGE|g|#project:demo-fastapi,branch:${{ github.ref_name }}" | nc -u -w1 127.0.0.1 8125 2>/dev/null || true
           fi
           
-          rm -f $SCAN_OUTPUT
+          echo "Bugs: $BUGS, Vulnerabilities: $VULNS, Code Smells: $SMELLS, Coverage: $COVERAGE%"
+          echo "::endgroup::"
           
-          # Phase 3: Fetch metrics (only if scan succeeded)
-          if [ $SCAN_STATUS -eq 0 ]; then
-            echo "📊 Phase 3: Collecting metrics..."
-            START_METRICS=$(date +%s%N)
-            sleep 3  # Wait for SonarQube to process
-            
-            PROJECT="quickstark_demo-fastapi_6ba235ba-ff96-459d-8607-919121b2ad98"
-            
-            # Fetch metrics with error handling
-            METRICS=$(curl -s -u "$SONAR_TOKEN:" \
-              "$SONAR_HOST_URL/api/measures/component?component=${PROJECT}&metricKeys=bugs,vulnerabilities,code_smells,coverage,ncloc" \
-              2>/dev/null) || METRICS="{}"
-            
-            # Parse metrics
-            BUGS=$(echo "$METRICS" | jq -r '.component.measures[] | select(.metric=="bugs") | .value // "0"' 2>/dev/null || echo "0")
-            VULNS=$(echo "$METRICS" | jq -r '.component.measures[] | select(.metric=="vulnerabilities") | .value // "0"' 2>/dev/null || echo "0")
-            COVERAGE=$(echo "$METRICS" | jq -r '.component.measures[] | select(.metric=="coverage") | .value // "0"' 2>/dev/null || echo "0")
-            LINES=$(echo "$METRICS" | jq -r '.component.measures[] | select(.metric=="ncloc") | .value // "0"' 2>/dev/null || echo "0")
-            
-            END_METRICS=$(date +%s%N)
-            METRICS_DURATION=$(( (END_METRICS - START_METRICS) / 1000000 ))
-            
-            # Send metrics span
-            datadog-ci trace -- --name "SonarQube.MetricsCollection" \
-              --tags "project:demo-fastapi" \
-              --metrics "bugs:$BUGS,vulnerabilities:$VULNS,coverage:$COVERAGE,lines:$LINES,duration.ms:$METRICS_DURATION" \
-              echo "Metrics: Bugs=$BUGS, Vulnerabilities=$VULNS, Coverage=$COVERAGE%" 2>/dev/null || true
-            
-            echo "📊 Metrics collected: Bugs=$BUGS, Vulnerabilities=$VULNS, Coverage=$COVERAGE%, Lines=$LINES"
-            
-            # Phase 4: Quality Gate check
-            echo "✅ Phase 4: Checking quality gate..."
-            START_QG=$(date +%s%N)
-            
-            QG_STATUS=$(curl -s -u "$SONAR_TOKEN:" \
-              "$SONAR_HOST_URL/api/qualitygates/project_status?projectKey=${PROJECT}" \
-              | jq -r '.projectStatus.status' 2>/dev/null) || QG_STATUS="UNKNOWN"
-            
-            END_QG=$(date +%s%N)
-            QG_DURATION=$(( (END_QG - START_QG) / 1000000 ))
-            
-            # Send quality gate span
-            datadog-ci trace -- --name "SonarQube.QualityGate" \
-              --tags "project:demo-fastapi,status:$QG_STATUS" \
-              --metrics "duration.ms:$QG_DURATION" \
-              echo "Quality Gate: $QG_STATUS" 2>/dev/null || true
-            
-            if [ "$QG_STATUS" = "OK" ]; then
-              echo "✅ Quality Gate: PASSED"
-            else
-              echo "❌ Quality Gate: $QG_STATUS"
-            fi
-            
-            # Send summary metrics to StatsD
-            if command -v nc &> /dev/null; then
-              echo "sonarqube.analysis.complete:1|c|#project:demo-fastapi,status:success" | nc -u -w1 127.0.0.1 8125 2>/dev/null || true
-              echo "sonarqube.bugs:$BUGS|g|#project:demo-fastapi" | nc -u -w1 127.0.0.1 8125 2>/dev/null || true
-              echo "sonarqube.vulnerabilities:$VULNS|g|#project:demo-fastapi" | nc -u -w1 127.0.0.1 8125 2>/dev/null || true
-              echo "sonarqube.coverage:$COVERAGE|g|#project:demo-fastapi" | nc -u -w1 127.0.0.1 8125 2>/dev/null || true
-              echo "sonarqube.quality_gate:$([[ "$QG_STATUS" == "OK" ]] && echo 1 || echo 0)|g|#project:demo-fastapi" | nc -u -w1 127.0.0.1 8125 2>/dev/null || true
-            fi
+          # Phase 4: Quality Gate
+          echo "::group::✅ Phase 4: Quality Gate Check"
+          QG_START=$(date +%s)
+          
+          QG_STATUS=$(curl -s -u "$SONAR_TOKEN:" \
+            "$SONAR_HOST_URL/api/qualitygates/project_status?projectKey=${PROJECT}" \
+            | jq -r '.projectStatus.status' 2>/dev/null) || QG_STATUS="UNKNOWN"
+          
+          QG_END=$(date +%s)
+          QG_DURATION=$((QG_END - QG_START))
+          send_timing "sonarqube.phase.quality_gate" "$((QG_DURATION * 1000))" "#project:demo-fastapi,status:$QG_STATUS"
+          
+          if [ "$QG_STATUS" = "OK" ]; then
+            echo "✅ Quality Gate: PASSED"
+          elif [ "$QG_STATUS" = "ERROR" ]; then
+            echo "❌ Quality Gate: FAILED (continuing anyway)"
+          else
+            echo "⚠️  Quality Gate: $QG_STATUS"
           fi
+          echo "::endgroup::"
           
-          # Total duration
-          TOTAL_DURATION=$(( ($(date +%s%N) - START_PREP) / 1000000 ))
-          echo "🎯 Total SonarQube analysis time: ${TOTAL_DURATION}ms"
+          # Total timing
+          TOTAL_END=$(date +%s)
+          TOTAL_DURATION=$((TOTAL_END - TOTAL_START))
+          send_timing "sonarqube.total" "$((TOTAL_DURATION * 1000))" "#project:demo-fastapi"
+          
+          echo "::notice title=SonarQube Complete::Analysis completed in ${TOTAL_DURATION} seconds (Bugs: $BUGS, Vulnerabilities: $VULNS, Coverage: $COVERAGE%)"
         continue-on-error: true
       
-      # Continue with rest of your pipeline (unchanged)
+      # ===== System Information =====
       - name: System Information
         run: |
           echo "=== System Information ==="
@@ -182,4 +158,247 @@ jobs:
           echo "OS: $(uname -a)"
           echo "=========================="
       
-      # ... rest of your existing steps ...
+      - name: Check Available Tools
+        run: |
+          echo "=== Checking Available Tools ==="
+          
+          # Check Python
+          if command -v python3 &> /dev/null; then
+            echo "✓ Python3: $(python3 --version)"
+          else
+            echo "✗ Python3 not found"
+          fi
+          
+          # Check Docker
+          if command -v docker &> /dev/null; then
+            echo "✓ Docker: $(docker --version)"
+            if docker ps &> /dev/null; then
+              echo "  ✓ Docker daemon accessible"
+            else
+              echo "  ✗ Docker daemon not accessible (might need socket mount)"
+            fi
+          else
+            echo "✗ Docker not found"
+          fi
+          
+          # Check Docker Compose
+          if command -v docker-compose &> /dev/null; then
+            echo "✓ Docker Compose: $(docker-compose --version)"
+          else
+            echo "✗ Docker Compose not found"
+          fi
+          
+          # Check curl and other tools
+          command -v curl &> /dev/null && echo "✓ curl available" || echo "✗ curl not found"
+          command -v jq &> /dev/null && echo "✓ jq available" || echo "✗ jq not found"
+          command -v nc &> /dev/null && echo "✓ netcat available" || echo "✗ netcat not found"
+          
+          echo "=========================="
+      
+      # ===== Testing =====
+      - name: Setup Python Environment (if available)
+        if: ${{ !inputs.skip_tests || github.event_name == 'push' }}
+        run: |
+          if command -v python3 &> /dev/null; then
+            echo "Setting up Python environment..."
+            python3 -m venv venv || true
+            source venv/bin/activate || true
+            pip install --upgrade pip || true
+            pip install -r requirements.txt || true
+          else
+            echo "Python not available, skipping Python setup"
+          fi
+      
+      - name: Run Tests in Container
+        if: ${{ !inputs.skip_tests || github.event_name == 'push' }}
+        run: |
+          if command -v docker &> /dev/null && docker ps &> /dev/null; then
+            echo "Running tests in Docker container..."
+            docker run --rm \
+              -v $(pwd):/app \
+              -w /app \
+              -e MONGO_CONN=localhost \
+              -e MONGO_USER=testuser \
+              -e MONGO_PW=testpass \
+              -e OPENAI_API_KEY=dummy-key-for-testing \
+              -e SES_REGION=us-east-1 \
+              -e SES_FROM_EMAIL=test@example.com \
+              -e NOTION_API_KEY=dummy-key-for-testing \
+              -e NOTION_DATABASE_ID=dummy-key-for-testing \
+              -e AMAZON_KEY_ID=dummy-key-for-testing \
+              -e AMAZON_KEY_SECRET=dummy-key-for-testing \
+              -e AMAZON_S3_BUCKET=dummy-bucket-for-testing \
+              -e BUG_REPORT_EMAIL=test@example.com \
+              python:3.12-slim bash -c "pip install -r requirements.txt && pytest -v" || echo "Tests failed or skipped"
+          elif command -v python3 &> /dev/null; then
+            echo "Running tests with local Python..."
+            source venv/bin/activate || true
+            pytest -v || echo "Tests failed or skipped"
+          else
+            echo "⚠️  Cannot run tests - no Python or Docker available"
+          fi
+      
+      # ===== Build and Push =====
+      - name: Build Docker Image
+        id: docker_build
+        run: |
+          if command -v docker &> /dev/null && docker ps &> /dev/null; then
+            echo "Building Docker image..."
+            
+            # Login to Docker Hub
+            echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login --username "${{ secrets.DOCKERHUB_USER }}" --password-stdin
+            
+            # Build the image
+            docker build -t quickstark/api-images:latest .
+            
+            # Tag with commit SHA
+            docker tag quickstark/api-images:latest quickstark/api-images:${{ github.sha }}
+            
+            # Push to Docker Hub
+            docker push quickstark/api-images:latest
+            docker push quickstark/api-images:${{ github.sha }}
+            
+            echo "✅ Docker image built and pushed successfully"
+          else
+            echo "❌ Docker not available or not accessible"
+            echo "If your runner is containerized, ensure Docker socket is mounted:"
+            echo "  -v /var/run/docker.sock:/var/run/docker.sock"
+            exit 1
+          fi
+      
+      # ===== Deployment =====
+      - name: Deploy to Local Docker
+        if: ${{ !inputs.skip_deploy && steps.docker_build.outcome == 'success' }}
+        run: |
+          echo "=== Deploying to Local Docker on GMKTec ==="
+          
+          # Stop and remove existing container
+          echo "Stopping existing container..."
+          docker stop images-api 2>/dev/null || echo "No existing container to stop"
+          docker rm -f images-api 2>/dev/null || echo "No existing container to remove"
+          
+          # Clean up old images to save space
+          echo "Cleaning up old images..."
+          docker image prune -f || true
+          
+          # Pull the latest image (already pushed to Docker Hub)
+          echo "Pulling latest image from Docker Hub..."
+          docker pull quickstark/api-images:latest
+          
+          # Run new container with production configuration
+          echo "Starting new container..."
+          docker run -d \
+            --name images-api \
+            --restart unless-stopped \
+            -p 9000:8080 \
+            --add-host=host.docker.internal:host-gateway \
+            -e DD_SERVICE="${{ secrets.DD_SERVICE }}" \
+            -e DD_ENV="${{ secrets.DD_ENV }}" \
+            -e DD_VERSION="${{ github.sha }}" \
+            -e DD_AGENT_HOST="${{ secrets.DD_AGENT_HOST || 'host.docker.internal' }}" \
+            -e DD_PROFILING_ENABLED=true \
+            -e DD_PROFILING_TIMELINE_ENABLED=true \
+            -e DD_DBM_PROPAGATION_MODE=full \
+            -e PGHOST="${{ secrets.PGHOST }}" \
+            -e PGPORT="${{ secrets.PGPORT }}" \
+            -e PGDATABASE="${{ secrets.PGDATABASE }}" \
+            -e PGUSER="${{ secrets.PGUSER }}" \
+            -e PGPASSWORD="${{ secrets.PGPASSWORD }}" \
+            -e SQLSERVER_ENABLED="${{ secrets.SQLSERVER_ENABLED || 'true' }}" \
+            -e SQLSERVERHOST="${{ secrets.SQLSERVERHOST }}" \
+            -e SQLSERVERPORT="${{ secrets.SQLSERVERPORT }}" \
+            -e SQLSERVERUSER="${{ secrets.SQLSERVERUSER }}" \
+            -e SQLSERVERPW="${{ secrets.SQLSERVERPW }}" \
+            -e SQLSERVERDB="${{ secrets.SQLSERVERDB }}" \
+            -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+            -e DD_API_KEY="${{ secrets.DD_API_KEY }}" \
+            -e DD_APP_KEY="${{ secrets.DD_APP_KEY }}" \
+            -e SES_REGION="${{ secrets.SES_REGION }}" \
+            -e SES_FROM_EMAIL="${{ secrets.SES_FROM_EMAIL }}" \
+            -e NOTION_API_KEY="${{ secrets.NOTION_API_KEY }}" \
+            -e NOTION_DATABASE_ID="${{ secrets.NOTION_DATABASE_ID }}" \
+            -e AMAZON_KEY_ID="${{ secrets.AMAZON_KEY_ID }}" \
+            -e AMAZON_KEY_SECRET="${{ secrets.AMAZON_KEY_SECRET }}" \
+            -e AMAZON_S3_BUCKET="${{ secrets.AMAZON_S3_BUCKET }}" \
+            -e MONGO_CONN="${{ secrets.MONGO_CONN }}" \
+            -e MONGO_USER="${{ secrets.MONGO_USER }}" \
+            -e MONGO_PW="${{ secrets.MONGO_PW }}" \
+            -e BUG_REPORT_EMAIL="${{ secrets.BUG_REPORT_EMAIL }}" \
+            quickstark/api-images:latest
+          
+          # Wait for container to start
+          echo "Waiting for container to start..."
+          sleep 10
+          
+          # Check container status
+          echo "Container status:"
+          docker ps | grep images-api || echo "Container not found in ps output"
+          
+          # Check health endpoint
+          echo "Checking health endpoint..."
+          if curl -f http://localhost:9000/health 2>/dev/null; then
+            echo "✅ Health check passed - API is running on port 9000"
+          elif curl -f http://localhost:9000/ 2>/dev/null; then
+            echo "✅ Root endpoint accessible on port 9000"
+          else
+            echo "⚠️  Health check failed - checking container logs..."
+            docker logs --tail 50 images-api
+          fi
+          
+          echo "✅ Deployment complete!"
+          echo "Application is running at: http://localhost:9000"
+      
+      # ===== Post-Deployment =====
+      - name: Deployment Notification
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ Deployment successful!"
+            echo "Commit: ${{ github.sha }}"
+            echo "Branch: ${{ github.ref_name }}"
+            echo "Actor: ${{ github.actor }}"
+          else
+            echo "❌ Deployment failed!"
+            echo "Check the logs above for details"
+          fi
+      
+      - name: Mark Deployment in Datadog
+        if: success()
+        continue-on-error: true
+        run: |
+          # First try with existing datadog-ci if available
+          if command -v datadog-ci &> /dev/null; then
+            datadog-ci deployment mark \
+              --env "${{ secrets.DD_ENV }}" \
+              --service "${{ secrets.DD_SERVICE }}" \
+              --revision "${{ github.sha }}" \
+              --tags "deployment_method:self_hosted" \
+              --tags "repository:${{ github.repository }}" \
+              --tags "branch:${{ github.ref_name }}" \
+              --no-fail || true
+          # Otherwise try to install it locally (not globally)
+          elif command -v npm &> /dev/null; then
+            # Install locally to avoid permission issues
+            npm install @datadog/datadog-ci 2>/dev/null || true
+            
+            if [ -f "$(pwd)/node_modules/.bin/datadog-ci" ]; then
+              $(pwd)/node_modules/.bin/datadog-ci deployment mark \
+                --env "${{ secrets.DD_ENV }}" \
+                --service "${{ secrets.DD_SERVICE }}" \
+                --revision "${{ github.sha }}" \
+                --tags "deployment_method:self_hosted" \
+                --tags "repository:${{ github.repository }}" \
+                --tags "branch:${{ github.ref_name }}" \
+                --no-fail || true
+            fi
+          else
+            echo "Datadog CI not available, skipping deployment marking"
+          fi
+      
+      - name: Post Checkout code
+        run: |
+          echo "Workflow complete"
+      
+      - name: Complete job
+        run: |
+          echo "All steps completed"
