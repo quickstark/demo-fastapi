@@ -17,13 +17,7 @@ on:
 
 jobs:
   build-and-deploy:
-    # Use self-hosted runner
     runs-on: self-hosted
-    
-    # Optional: Add container options if you need specific tools
-    # container:
-    #   image: python:3.12-slim
-    #   options: --user root
     
     steps:
       - name: Checkout code
@@ -31,26 +25,109 @@ jobs:
         with:
           fetch-depth: 0  # Required for SonarQube analysis
       
-      # SonarQube Code Analysis (using Docker - no dependencies needed)
-      - name: SonarQube Scan
+      # ===== SonarQube Analysis (Split into trackable steps) =====
+      
+      - name: 🔍 SonarQube - Code Analysis
+        id: sonar_scan
+        if: ${{ secrets.SONAR_TOKEN != '' && secrets.SONAR_HOST_URL != '' }}
         run: |
-          if [ -n "${{ secrets.SONAR_TOKEN }}" ] && [ -n "${{ secrets.SONAR_HOST_URL }}" ]; then
-            echo "Running SonarQube analysis in Docker container..."
-            docker run --rm \
-              -e SONAR_HOST_URL="${{ secrets.SONAR_HOST_URL }}" \
-              -e SONAR_TOKEN="${{ secrets.SONAR_TOKEN }}" \
-              -v "$(pwd):/usr/src" \
-              sonarsource/sonar-scanner-cli \
-              -Dsonar.projectKey=quickstark_demo-fastapi_6ba235ba-ff96-459d-8607-919121b2ad98 \
-              -Dsonar.sources=main.py,src \
-              -Dsonar.tests=tests \
-              -Dsonar.language=py \
-              -Dsonar.python.version=3.9,3.10,3.11,3.12 \
-              -Dsonar.sourceEncoding=UTF-8 || echo "⚠️  SonarQube scan failed - continuing deployment"
-          else
-            echo "⚠️  SonarQube credentials not configured - skipping analysis"
+          echo "Running SonarQube analysis in Docker container..."
+          docker run --rm \
+            -e SONAR_HOST_URL="${{ secrets.SONAR_HOST_URL }}" \
+            -e SONAR_TOKEN="${{ secrets.SONAR_TOKEN }}" \
+            -v "$(pwd):/usr/src" \
+            sonarsource/sonar-scanner-cli \
+            -Dsonar.projectKey=quickstark_demo-fastapi_6ba235ba-ff96-459d-8607-919121b2ad98 \
+            -Dsonar.sources=main.py,src \
+            -Dsonar.tests=tests \
+            -Dsonar.language=py \
+            -Dsonar.python.version=3.9,3.10,3.11,3.12 \
+            -Dsonar.sourceEncoding=UTF-8 || {
+              echo "sonar_failed=true" >> $GITHUB_OUTPUT
+              echo "⚠️  SonarQube scan failed - continuing deployment"
+              exit 0
+            }
+          echo "sonar_failed=false" >> $GITHUB_OUTPUT
+        continue-on-error: true
+      
+      - name: 📊 SonarQube - Fetch Metrics
+        id: sonar_metrics
+        if: ${{ steps.sonar_scan.outputs.sonar_failed != 'true' && secrets.SONAR_TOKEN != '' }}
+        run: |
+          echo "Fetching SonarQube metrics..."
+          sleep 5  # Wait for SonarQube to process
+          
+          PROJECT_KEY="quickstark_demo-fastapi_6ba235ba-ff96-459d-8607-919121b2ad98"
+          
+          # Fetch metrics from SonarQube API
+          METRICS=$(curl -s -u "${{ secrets.SONAR_TOKEN }}:" \
+            "${{ secrets.SONAR_HOST_URL }}/api/measures/component?component=${PROJECT_KEY}&metricKeys=bugs,vulnerabilities,code_smells,coverage,duplicated_lines_density" \
+            2>/dev/null) || {
+            echo "⚠️  Failed to fetch metrics"
+            exit 0
+          }
+          
+          # Parse metrics
+          if [ -n "$METRICS" ]; then
+            BUGS=$(echo "$METRICS" | jq -r '.component.measures[] | select(.metric=="bugs") | .value // "0"' 2>/dev/null || echo "0")
+            VULNS=$(echo "$METRICS" | jq -r '.component.measures[] | select(.metric=="vulnerabilities") | .value // "0"' 2>/dev/null || echo "0")
+            SMELLS=$(echo "$METRICS" | jq -r '.component.measures[] | select(.metric=="code_smells") | .value // "0"' 2>/dev/null || echo "0")
+            COVERAGE=$(echo "$METRICS" | jq -r '.component.measures[] | select(.metric=="coverage") | .value // "0"' 2>/dev/null || echo "0")
+            
+            echo "📊 Metrics: Bugs=$BUGS, Vulnerabilities=$VULNS, Code Smells=$SMELLS, Coverage=$COVERAGE%"
+            
+            # Output metrics for later use
+            echo "bugs=$BUGS" >> $GITHUB_OUTPUT
+            echo "vulnerabilities=$VULNS" >> $GITHUB_OUTPUT
+            echo "code_smells=$SMELLS" >> $GITHUB_OUTPUT
+            echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
+            
+            # Send metrics to Datadog if available
+            if command -v nc &> /dev/null && [ -n "${{ secrets.DD_API_KEY }}" ]; then
+              echo "sonarqube.bugs:$BUGS|g|#project:demo-fastapi,branch:${{ github.ref_name }}" | nc -u -w1 127.0.0.1 8125 2>/dev/null || true
+              echo "sonarqube.vulnerabilities:$VULNS|g|#project:demo-fastapi,branch:${{ github.ref_name }}" | nc -u -w1 127.0.0.1 8125 2>/dev/null || true
+              echo "sonarqube.code_smells:$SMELLS|g|#project:demo-fastapi,branch:${{ github.ref_name }}" | nc -u -w1 127.0.0.1 8125 2>/dev/null || true
+              echo "sonarqube.coverage:$COVERAGE|g|#project:demo-fastapi,branch:${{ github.ref_name }}" | nc -u -w1 127.0.0.1 8125 2>/dev/null || true
+            fi
           fi
-        continue-on-error: true  # Don't fail deployment if SonarQube is unavailable
+        continue-on-error: true
+      
+      - name: ✅ SonarQube - Quality Gate Check
+        if: ${{ steps.sonar_scan.outputs.sonar_failed != 'true' && secrets.SONAR_TOKEN != '' }}
+        run: |
+          echo "Checking Quality Gate status..."
+          
+          PROJECT_KEY="quickstark_demo-fastapi_6ba235ba-ff96-459d-8607-919121b2ad98"
+          
+          # Get latest analysis
+          ANALYSIS=$(curl -s -u "${{ secrets.SONAR_TOKEN }}:" \
+            "${{ secrets.SONAR_HOST_URL }}/api/project_analyses/search?project=${PROJECT_KEY}" \
+            2>/dev/null) || {
+            echo "⚠️  Could not fetch analysis status"
+            exit 0
+          }
+          
+          ANALYSIS_ID=$(echo "$ANALYSIS" | jq -r '.analyses[0].key' 2>/dev/null)
+          
+          if [ -n "$ANALYSIS_ID" ] && [ "$ANALYSIS_ID" != "null" ]; then
+            # Check quality gate
+            QG_STATUS=$(curl -s -u "${{ secrets.SONAR_TOKEN }}:" \
+              "${{ secrets.SONAR_HOST_URL }}/api/qualitygates/project_status?analysisId=$ANALYSIS_ID" \
+              | jq -r '.projectStatus.status' 2>/dev/null)
+            
+            if [ "$QG_STATUS" = "OK" ]; then
+              echo "✅ Quality Gate: PASSED"
+            elif [ "$QG_STATUS" = "ERROR" ]; then
+              echo "❌ Quality Gate: FAILED (continuing anyway)"
+            else
+              echo "⚠️  Quality Gate: $QG_STATUS"
+            fi
+          else
+            echo "⚠️  No analysis found to check"
+          fi
+        continue-on-error: true
+      
+      # ===== System Information =====
       
       - name: System Information
         run: |
@@ -61,7 +138,6 @@ jobs:
           echo "OS: $(uname -a)"
           echo "=========================="
       
-      # Check available tools in the runner
       - name: Check Available Tools
         run: |
           echo "=== Checking Available Tools ==="
@@ -76,11 +152,10 @@ jobs:
           # Check Docker
           if command -v docker &> /dev/null; then
             echo "✓ Docker: $(docker --version)"
-            # Check if we can access Docker daemon
             if docker ps &> /dev/null; then
               echo "  ✓ Docker daemon accessible"
             else
-              echo "  ✗ Docker daemon not accessible (might need socket mount)"
+              echo "  ✗ Docker daemon not accessible"
             fi
           else
             echo "✗ Docker not found"
@@ -93,16 +168,15 @@ jobs:
             echo "✗ Docker Compose not found"
           fi
           
-          # Check curl
-          if command -v curl &> /dev/null; then
-            echo "✓ curl available"
-          else
-            echo "✗ curl not found"
-          fi
+          # Check curl and other tools
+          command -v curl &> /dev/null && echo "✓ curl available" || echo "✗ curl not found"
+          command -v jq &> /dev/null && echo "✓ jq available" || echo "✗ jq not found"
+          command -v nc &> /dev/null && echo "✓ netcat available" || echo "✗ netcat not found"
           
           echo "=========================="
       
-      # Option 1: If Python is available in the runner
+      # ===== Testing =====
+      
       - name: Setup Python Environment (if available)
         if: ${{ !inputs.skip_tests || github.event_name == 'push' }}
         run: |
@@ -116,7 +190,6 @@ jobs:
             echo "Python not available, skipping Python setup"
           fi
       
-      # Option 2: Run tests in Docker container (if Python not available)
       - name: Run Tests in Container
         if: ${{ !inputs.skip_tests || github.event_name == 'push' }}
         run: |
@@ -146,7 +219,8 @@ jobs:
             echo "⚠️  Cannot run tests - no Python or Docker available"
           fi
       
-      # Build Docker image
+      # ===== Build and Push =====
+      
       - name: Build Docker Image
         id: docker_build
         run: |
@@ -169,12 +243,11 @@ jobs:
             echo "✅ Docker image built and pushed successfully"
           else
             echo "❌ Docker not available or not accessible"
-            echo "If your runner is containerized, ensure Docker socket is mounted:"
-            echo "  -v /var/run/docker.sock:/var/run/docker.sock"
             exit 1
           fi
       
-      # Deploy to Local Docker (same machine)
+      # ===== Deployment =====
+      
       - name: Deploy to Local Docker
         if: ${{ !inputs.skip_deploy && steps.docker_build.outcome == 'success' }}
         run: |
@@ -189,7 +262,7 @@ jobs:
           echo "Cleaning up old images..."
           docker image prune -f || true
           
-          # Pull the latest image (already pushed to Docker Hub)
+          # Pull the latest image
           echo "Pulling latest image from Docker Hub..."
           docker pull quickstark/api-images:latest
           
@@ -256,7 +329,8 @@ jobs:
           echo "✅ Deployment complete!"
           echo "Application is running at: http://localhost:9000"
       
-      # Simple deployment notification
+      # ===== Post-Deployment =====
+      
       - name: Deployment Notification
         if: always()
         run: |
@@ -265,18 +339,38 @@ jobs:
             echo "Commit: ${{ github.sha }}"
             echo "Branch: ${{ github.ref_name }}"
             echo "Actor: ${{ github.actor }}"
+            
+            # Include SonarQube metrics if available
+            if [ -n "${{ steps.sonar_metrics.outputs.bugs }}" ]; then
+              echo ""
+              echo "📊 Code Quality Metrics:"
+              echo "  Bugs: ${{ steps.sonar_metrics.outputs.bugs }}"
+              echo "  Vulnerabilities: ${{ steps.sonar_metrics.outputs.vulnerabilities }}"
+              echo "  Code Smells: ${{ steps.sonar_metrics.outputs.code_smells }}"
+              echo "  Coverage: ${{ steps.sonar_metrics.outputs.coverage }}%"
+            fi
           else
             echo "❌ Deployment failed!"
             echo "Check the logs above for details"
           fi
       
-      # Optional: Datadog deployment marking (if datadog-ci is available)
       - name: Mark Deployment in Datadog
         if: success()
         continue-on-error: true
         run: |
-          if command -v npm &> /dev/null; then
-            npm install -g @datadog/datadog-ci || true
+          # First try with existing datadog-ci if available
+          if command -v datadog-ci &> /dev/null; then
+            datadog-ci deployment mark \
+              --env "${{ secrets.DD_ENV }}" \
+              --service "${{ secrets.DD_SERVICE }}" \
+              --revision "${{ github.sha }}" \
+              --tags "deployment_method:self_hosted" \
+              --tags "repository:${{ github.repository }}" \
+              --tags "branch:${{ github.ref_name }}" \
+              --no-fail || true
+          # Otherwise try to install it
+          elif command -v npm &> /dev/null; then
+            npm install -g @datadog/datadog-ci 2>/dev/null || true
             
             if command -v datadog-ci &> /dev/null; then
               datadog-ci deployment mark \
