@@ -70,11 +70,16 @@ jobs:
             fi
           fi
           
-          # Verify installation
+          # Verify installation and set output variable
           if command -v datadog-ci &> /dev/null; then
             echo "✓ datadog-ci version: $(datadog-ci version)"
             echo "✓ DD_API_KEY: ${DD_API_KEY:0:8}..."
             echo "✓ DD_SITE: $DD_SITE"
+            echo "datadog_ci_available=true" >> $GITHUB_OUTPUT
+            echo "✅ Datadog CI is ready for use"
+          else
+            echo "❌ datadog-ci not available after installation attempts"
+            echo "datadog_ci_available=false" >> $GITHUB_OUTPUT
           fi
 
       # Read VERSION file for semantic versioning
@@ -278,6 +283,8 @@ jobs:
             AMAZON_KEY_SECRET=dummy-key-for-testing \
             AMAZON_S3_BUCKET=dummy-bucket-for-testing \
             BUG_REPORT_EMAIL=test@example.com \
+            DD_TRACE_ENABLED=false \
+            DD_PROFILING_ENABLED=false \
             pytest -v --junitxml=test-results/junit.xml --tb=short || TEST_EXIT_CODE=$?
 
             # Check if test results were generated
