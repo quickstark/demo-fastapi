@@ -134,13 +134,16 @@ jobs:
           echo "::group::🔍 Phase 2: Code Analysis"
           SCAN_START=$(date +%s)
           
-          # Run SonarQube scan with file pattern-based test detection
-          # Note: Using test.inclusions instead of tests directory to avoid
-          # Docker volume mount issues in containerized runner environment
+          # Run SonarQube scan with explicit sources and pattern-based test detection
+          # Note: Using test.inclusions instead of tests directory parameter to avoid
+          # Docker volume mount directory validation issues in containerized runner
           echo "Running SonarQube scanner..."
           echo "Working directory: $(pwd)"
-          echo "Files to scan:"
-          ls -la | head -10
+          echo "Files in workspace:"
+          ls -la | head -15
+          echo ""
+          echo "Python files to analyze:"
+          find . -name "*.py" -not -path "./venv/*" -not -path "./.git/*" | head -20
 
           docker run --rm \
             -e SONAR_HOST_URL="$SONAR_HOST_URL" \
@@ -148,12 +151,13 @@ jobs:
             -v "$(pwd):/usr/src" \
             sonarsource/sonar-scanner-cli \
             -Dsonar.projectKey=quickstark_demo-fastapi_6ba235ba-ff96-459d-8607-919121b2ad98 \
-            -Dsonar.sources=. \
-            -Dsonar.exclusions=venv/**,**/__pycache__/**,.git/**,test-results/** \
+            -Dsonar.sources=main.py,src \
             -Dsonar.test.inclusions=tests/**/*.py,**/*_test.py,**/test_*.py \
+            -Dsonar.exclusions=**/__pycache__/**,**/*.pyc,venv/** \
             -Dsonar.language=py \
             -Dsonar.python.version=3.9,3.10,3.11,3.12 \
-            -Dsonar.sourceEncoding=UTF-8 || {
+            -Dsonar.sourceEncoding=UTF-8 \
+            -Dsonar.verbose=true || {
               echo "⚠️  SonarQube scan failed - continuing deployment"
               exit 0
             }
