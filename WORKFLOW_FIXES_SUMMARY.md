@@ -78,27 +78,36 @@ The deployment marking step used `if: success()` condition, which meant it only 
 
 ---
 
-### 4. SonarQube Configuration Validation ✅
+### 4. SonarQube Docker Volume Mount Issue ✅
 
 **Root Cause:**
-SonarQube step lacked output validation and status tracking.
+Same Docker-in-Docker volume mount issue as the pytest problem! The error showed:
+```
+ERROR The folder 'tests' does not exist for '***_demo-fastapi_6ba235ba-ff96-459d-8607-919121b2ad98' (base directory = /usr/src)
+```
+
+The workflow was using `-Dsonar.tests=tests` which required SonarQube to validate the directory exists at `/usr/src/tests` inside the scanner container. Due to the containerized runner's volume mount issues, this validation failed.
 
 **Solution Implemented:**
-- Added step ID for output tracking
-- Display SonarQube configuration at start
-- Set output variable on successful completion
-- Added explicit `continue-on-error: true` for clarity
+- Removed directory-based test specification (`-Dsonar.tests=tests`)
+- Changed to pattern-based test detection using `-Dsonar.test.inclusions=tests/**/*.py,**/*_test.py,**/test_*.py`
+- Changed sources from specific paths to `.` (scan everything)
+- Added exclusions for venv, __pycache__, .git, and test-results directories
+- Added debugging output showing working directory and files
+- Added step ID and output tracking for status monitoring
 
 **Changes Made:**
-- `.github/workflows/deploy-self-hosted.yaml:90-91` - Added step ID and continue-on-error
-- `.github/workflows/deploy-self-hosted.yaml:103-104` - Added configuration display
-- `.github/workflows/deploy-self-hosted.yaml:234` - Added completion output variable
+- `.github/workflows/deploy-self-hosted.yaml:137-159` - Complete rewrite of scanner invocation
+- Simplified from two conditional branches to single scanner command
+- Added file pattern matching instead of directory specification
+- Added comprehensive exclusions list
 
 **Benefits:**
-- Better visibility into SonarQube execution
-- Can track whether analysis completed
-- Easier to debug SonarQube connectivity issues
-- Maintains non-blocking behavior for deployment
+- Works around Docker volume mount issues in containerized runners
+- Still properly categorizes test files in SonarQube dashboard
+- Simpler workflow logic (no conditional branches needed)
+- Better debugging output for troubleshooting
+- More flexible test file detection (catches multiple naming conventions)
 
 ---
 
@@ -230,8 +239,9 @@ git push origin main --force  # Use with caution
 
 1. **Containerized Runners Require Different Approaches:**
    - Direct tool execution often works better than Docker-in-Docker
-   - Volume mounts can be problematic with nested containers
-   - Use runner's built-in tools when available
+   - Volume mounts can be problematic with nested containers (`$(pwd)` in runner ≠ host path)
+   - Use runner's built-in tools when available (Python, Node.js, etc.)
+   - Use file patterns instead of directory paths when possible
 
 2. **Datadog Integration Best Practices:**
    - Validate configuration before attempting operations
@@ -243,6 +253,56 @@ git push origin main --force  # Use with caution
    - Validate prerequisites before operations
    - Provide clear, actionable error messages
    - Set output variables for step coordination
+
+---
+
+## Long-Term Recommendations
+
+### 1. Install Tools Directly in Runner Container
+Instead of using Docker-in-Docker for tools like SonarQube scanner and test execution, install them directly in the GitHub Actions runner container:
+
+```dockerfile
+# In your runner container setup
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    python3-venv \
+    nodejs \
+    npm \
+    unzip \
+    wget
+
+# Install SonarQube Scanner CLI
+RUN wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip && \
+    unzip sonar-scanner-cli-5.0.1.3006-linux.zip -d /opt && \
+    ln -s /opt/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner /usr/local/bin/sonar-scanner
+
+# Install Datadog CI
+RUN npm install -g @datadog/datadog-ci
+```
+
+**Benefits:**
+- No Docker-in-Docker complexity
+- Faster execution (no image pulls)
+- More reliable (no volume mount issues)
+- Easier debugging
+
+### 2. Alternative: Fix Volume Mounts
+If you prefer to keep Docker-based tools, ensure the runner's workspace is properly mounted from the host:
+
+```bash
+# When starting the runner container
+docker run -d \
+  --name github-runner-prod \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /path/on/host/workspace:/home/github/actions/_work \
+  myorg/github-runner:latest
+```
+
+Then the workflow can use volume mounts that reference the host path.
+
+### 3. Consider GitHub-Hosted Runners
+If maintenance of self-hosted runners becomes burdensome, GitHub-hosted runners don't have these Docker-in-Docker issues because they run directly on VMs, not in containers.
 
 ---
 
