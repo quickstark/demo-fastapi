@@ -25,6 +25,58 @@ jobs:
         with:
           fetch-depth: 0  # Required for SonarQube analysis
 
+      # Install Datadog CI early in the workflow
+      - name: Install Datadog CI
+        id: datadog_setup
+        continue-on-error: true
+        env:
+          DD_API_KEY: ${{ secrets.DD_API_KEY }}
+          DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
+          DD_SITE: datadoghq.com
+        run: |
+          echo "=========================================="
+          echo "Setting up Datadog CI"
+          echo "=========================================="
+          
+          # Check if datadog-ci.sh exists and is executable
+          if [ -f "/tmp/datadog-ci.sh" ]; then
+            echo "✓ Found mounted datadog-ci.sh script"
+            chmod +x /tmp/datadog-ci.sh
+            if /tmp/datadog-ci.sh; then
+              echo "✅ Datadog CI installed successfully via script"
+              echo "datadog_ci_available=true" >> $GITHUB_OUTPUT
+            else
+              echo "⚠️  datadog-ci.sh script failed, trying manual installation..."
+            fi
+          else
+            echo "⚠️  /tmp/datadog-ci.sh not found, trying manual installation..."
+          fi
+          
+          # Fallback: Try manual installation if script failed or doesn't exist
+          if ! command -v datadog-ci &> /dev/null; then
+            if command -v npm &> /dev/null; then
+              echo "Installing datadog-ci globally..."
+              npm install -g @datadog/datadog-ci
+              if command -v datadog-ci &> /dev/null; then
+                echo "✅ Datadog CI installed via npm"
+                echo "datadog_ci_available=true" >> $GITHUB_OUTPUT
+              else
+                echo "❌ Failed to install datadog-ci"
+                echo "datadog_ci_available=false" >> $GITHUB_OUTPUT
+              fi
+            else
+              echo "❌ npm not available, cannot install datadog-ci"
+              echo "datadog_ci_available=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+          
+          # Verify installation
+          if command -v datadog-ci &> /dev/null; then
+            echo "✓ datadog-ci version: $(datadog-ci version)"
+            echo "✓ DD_API_KEY: ${DD_API_KEY:0:8}..."
+            echo "✓ DD_SITE: $DD_SITE"
+          fi
+
       # Read VERSION file for semantic versioning
       - name: Read VERSION
         id: version
@@ -218,8 +270,17 @@ jobs:
           fi
       
       - name: Run Tests in Container
+        id: run_tests
         if: ${{ !inputs.skip_tests || github.event_name == 'push' }}
+        continue-on-error: true
         run: |
+          echo "=========================================="
+          echo "Running Tests with JUnit XML Output"
+          echo "=========================================="
+          
+          # Create test-results directory
+          mkdir -p test-results
+          
           if command -v docker &> /dev/null && docker ps &> /dev/null; then
             echo "Running tests in Docker container..."
             echo "Current directory: $(pwd)"
@@ -231,6 +292,7 @@ jobs:
               ls -la
             fi
 
+            # Run tests with JUnit XML output for Datadog
             docker run --rm \
               -v "$(pwd)":/app \
               -w /app \
@@ -246,13 +308,90 @@ jobs:
               -e AMAZON_KEY_SECRET=dummy-key-for-testing \
               -e AMAZON_S3_BUCKET=dummy-bucket-for-testing \
               -e BUG_REPORT_EMAIL=test@example.com \
-              python:3.12-slim bash -c "ls -la && pip install -r requirements.txt && pytest -v" || echo "⚠️  Tests failed or were skipped"
+              python:3.12-slim bash -c "pip install -r requirements.txt && pytest -v --junitxml=test-results/junit.xml --tb=short" || TEST_EXIT_CODE=$?
+            
+            if [ -f "test-results/junit.xml" ]; then
+              echo "✅ Test results generated: test-results/junit.xml"
+              echo "tests_generated=true" >> $GITHUB_OUTPUT
+              
+              # Show test summary
+              if command -v xmllint &> /dev/null; then
+                TESTS=$(xmllint --xpath "string(//testsuite/@tests)" test-results/junit.xml 2>/dev/null || echo "?")
+                FAILURES=$(xmllint --xpath "string(//testsuite/@failures)" test-results/junit.xml 2>/dev/null || echo "?")
+                ERRORS=$(xmllint --xpath "string(//testsuite/@errors)" test-results/junit.xml 2>/dev/null || echo "?")
+                echo "Tests: $TESTS, Failures: $FAILURES, Errors: $ERRORS"
+              fi
+            else
+              echo "⚠️  No test results file generated"
+              echo "tests_generated=false" >> $GITHUB_OUTPUT
+            fi
+            
+            if [ -n "$TEST_EXIT_CODE" ] && [ "$TEST_EXIT_CODE" != "0" ]; then
+              echo "⚠️  Tests failed with exit code $TEST_EXIT_CODE"
+              echo "tests_passed=false" >> $GITHUB_OUTPUT
+            else
+              echo "✅ All tests passed"
+              echo "tests_passed=true" >> $GITHUB_OUTPUT
+            fi
+            
           elif command -v python3 &> /dev/null; then
             echo "Running tests with local Python..."
             source venv/bin/activate || true
-            pytest -v || echo "Tests failed or skipped"
+            pytest -v --junitxml=test-results/junit.xml --tb=short || TEST_EXIT_CODE=$?
+            
+            if [ -f "test-results/junit.xml" ]; then
+              echo "✅ Test results generated"
+              echo "tests_generated=true" >> $GITHUB_OUTPUT
+            else
+              echo "⚠️  No test results generated"
+              echo "tests_generated=false" >> $GITHUB_OUTPUT
+            fi
+            
+            if [ -n "$TEST_EXIT_CODE" ] && [ "$TEST_EXIT_CODE" != "0" ]; then
+              echo "tests_passed=false" >> $GITHUB_OUTPUT
+            else
+              echo "tests_passed=true" >> $GITHUB_OUTPUT
+            fi
           else
             echo "⚠️  Cannot run tests - no Python or Docker available"
+            echo "tests_generated=false" >> $GITHUB_OUTPUT
+          fi
+      
+      # Upload test results to Datadog
+      - name: Upload Test Results to Datadog
+        if: ${{ steps.run_tests.outputs.tests_generated == 'true' && steps.datadog_setup.outputs.datadog_ci_available == 'true' }}
+        continue-on-error: true
+        env:
+          DD_API_KEY: ${{ secrets.DD_API_KEY }}
+          DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
+          DD_SITE: datadoghq.com
+          DD_ENV: ${{ secrets.DD_ENV }}
+          DD_SERVICE: ${{ secrets.DD_SERVICE }}
+        run: |
+          echo "=========================================="
+          echo "Uploading Test Results to Datadog"
+          echo "=========================================="
+          
+          if [ ! -f "test-results/junit.xml" ]; then
+            echo "❌ Test results file not found"
+            exit 1
+          fi
+          
+          echo "✓ Found test results file"
+          echo "✓ Service: $DD_SERVICE"
+          echo "✓ Environment: $DD_ENV"
+          
+          # Upload test results using datadog-ci
+          datadog-ci junit upload \
+            --service "$DD_SERVICE" \
+            --env "$DD_ENV" \
+            test-results/junit.xml
+          
+          if [ $? -eq 0 ]; then
+            echo "✅ Test results uploaded to Datadog successfully"
+            echo "🔗 View in Datadog: https://app.datadoghq.com/ci/test-runs?env=$DD_ENV&service=$DD_SERVICE"
+          else
+            echo "❌ Failed to upload test results to Datadog"
           fi
       
       # ===== Build and Push =====
@@ -379,120 +518,59 @@ jobs:
             echo "Check the logs above for details"
           fi
       
-      # Install Node.js and datadog-ci for containerized runners
-      - name: Setup Node.js for Datadog CI
-        if: success()
-        run: |
-          echo "Checking for Node.js and npm..."
-          if ! command -v node &> /dev/null; then
-            echo "Node.js not found, attempting installation..."
-            if command -v apt-get &> /dev/null; then
-              curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-              apt-get install -y nodejs
-            elif command -v apk &> /dev/null; then
-              apk add --no-cache nodejs npm
-            else
-              echo "⚠️  Could not install Node.js automatically"
-            fi
-          else
-            echo "✓ Node.js already installed: $(node --version)"
-          fi
-
-          if ! command -v npm &> /dev/null; then
-            echo "❌ npm not available"
-          else
-            echo "✓ npm available: $(npm --version)"
-          fi
-
+      # Mark Deployment in Datadog
       - name: Mark Deployment in Datadog
-        if: success()
+        if: ${{ success() && steps.datadog_setup.outputs.datadog_ci_available == 'true' }}
         continue-on-error: true
         env:
           DD_API_KEY: ${{ secrets.DD_API_KEY }}
+          DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
+          DD_SITE: datadoghq.com
+          DD_ENV: ${{ secrets.DD_ENV }}
+          DD_SERVICE: ${{ secrets.DD_SERVICE }}
         run: |
+          echo "=========================================="
+          echo "Marking Deployment in Datadog"
+          echo "=========================================="
+          
           # Get short SHA for reference
           SHORT_SHA="${{ github.sha }}"
           SHORT_SHA="${SHORT_SHA:0:7}"
 
-          echo "📦 Marking deployment with version: ${{ steps.version.outputs.version }}"
+          echo "📦 Version: ${{ steps.version.outputs.version }}"
           echo "🔖 Git SHA: $SHORT_SHA"
+          echo "🏷️  Service: $DD_SERVICE"
+          echo "🌍 Environment: $DD_ENV"
           echo ""
 
-          # Check if DD_API_KEY is set
-          if [ -z "$DD_API_KEY" ]; then
-            echo "❌ ERROR: DD_API_KEY is not set in secrets"
-            echo "⚠️  Deployment marking skipped - please configure DD_API_KEY"
-            exit 0
+          # Check if datadog-ci is available
+          if ! command -v datadog-ci &> /dev/null; then
+            echo "❌ ERROR: datadog-ci is not available"
+            echo "⚠️  Deployment marking skipped"
+            exit 1
           fi
 
-          DEPLOYMENT_MARKED=false
-
-          # First try with existing datadog-ci if available
-          if command -v datadog-ci &> /dev/null; then
-            echo "✓ Found datadog-ci in PATH"
-            if datadog-ci deployment mark \
-              --env "${{ secrets.DD_ENV }}" \
-              --service "${{ secrets.DD_SERVICE }}" \
-              --revision "${{ steps.version.outputs.version }}" \
-              --tags "deployment_method:self_hosted" \
-              --tags "repository:${{ github.repository }}" \
-              --tags "branch:${{ github.ref_name }}" \
-              --tags "git_sha:$SHORT_SHA" \
-              --no-fail; then
-              DEPLOYMENT_MARKED=true
-              echo "✅ Deployment marked successfully with datadog-ci"
-            fi
-          # Otherwise try to install it locally
-          elif command -v npm &> /dev/null; then
-            echo "✓ Found npm, installing datadog-ci locally..."
-            # Install locally to avoid permission issues
-            if npm install @datadog/datadog-ci 2>&1; then
-              echo "✓ datadog-ci installed successfully"
-              if [ -f "$(pwd)/node_modules/.bin/datadog-ci" ]; then
-                echo "✓ Found datadog-ci binary"
-                if $(pwd)/node_modules/.bin/datadog-ci deployment mark \
-                  --env "${{ secrets.DD_ENV }}" \
-                  --service "${{ secrets.DD_SERVICE }}" \
-                  --revision "${{ steps.version.outputs.version }}" \
-                  --tags "deployment_method:self_hosted" \
-                  --tags "repository:${{ github.repository }}" \
-                  --tags "branch:${{ github.ref_name }}" \
-                  --tags "git_sha:$SHORT_SHA" \
-                  --no-fail; then
-                  DEPLOYMENT_MARKED=true
-                  echo "✅ Deployment marked successfully with local datadog-ci"
-                else
-                  echo "❌ datadog-ci command failed"
-                fi
-              else
-                echo "❌ datadog-ci binary not found after installation"
-              fi
-            else
-              echo "❌ npm install failed"
-            fi
-          else
-            echo "❌ Neither datadog-ci nor npm is available"
-          fi
-
-          if [ "$DEPLOYMENT_MARKED" = false ]; then
+          echo "✓ Found datadog-ci: $(datadog-ci version)"
+          
+          # Mark deployment in Datadog
+          if datadog-ci deployment mark \
+            --env "$DD_ENV" \
+            --service "$DD_SERVICE" \
+            --revision "${{ steps.version.outputs.version }}" \
+            --tags "deployment_method:self_hosted" \
+            --tags "repository:${{ github.repository }}" \
+            --tags "branch:${{ github.ref_name }}" \
+            --tags "git_sha:$SHORT_SHA" \
+            --tags "runner:containerized" \
+            --no-fail; then
             echo ""
-            echo "⚠️  WARNING: Deployment was NOT marked in Datadog"
-            echo ""
-            echo "For containerized runners, consider one of these approaches:"
-            echo "1. Build custom runner image with Node.js and datadog-ci pre-installed"
-            echo "2. Install Node.js in the runner container startup script"
-            echo "3. Use Datadog HTTP API instead (see documentation)"
+            echo "✅ Deployment marked successfully in Datadog"
+            echo "🔗 View in Datadog: https://app.datadoghq.com/services/service/$DD_SERVICE/deployments?env=$DD_ENV"
             echo ""
           else
             echo ""
-            echo "🎉 Deployment successfully marked in Datadog with version ${{ steps.version.outputs.version }}"
+            echo "❌ Failed to mark deployment in Datadog"
+            echo "   Check DD_API_KEY and network connectivity"
             echo ""
+            exit 1
           fi
-      
-      - name: Post Checkout code
-        run: |
-          echo "Workflow complete"
-      
-      - name: Complete job
-        run: |
-          echo "All steps completed"
