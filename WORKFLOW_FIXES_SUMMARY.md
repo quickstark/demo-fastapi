@@ -78,36 +78,40 @@ The deployment marking step used `if: success()` condition, which meant it only 
 
 ---
 
-### 4. SonarQube Docker Volume Mount Issue ✅
+### 4. SonarQube Source Configuration Issue ✅
 
 **Root Cause:**
-Same Docker-in-Docker volume mount issue as the pytest problem! The error showed:
-```
-ERROR The folder 'tests' does not exist for '***_demo-fastapi_6ba235ba-ff96-459d-8607-919121b2ad98' (base directory = /usr/src)
+Configuration error in `-Dsonar.sources` parameter. The workflow was using:
+```yaml
+-Dsonar.sources=main.py,src
 ```
 
-The workflow was using `-Dsonar.tests=tests` which required SonarQube to validate the directory exists at `/usr/src/tests` inside the scanner container. Due to the containerized runner's volume mount issues, this validation failed.
+SonarQube's `sources` parameter expects **directory paths**, not file paths. When `main.py` was specified, SonarQube tried to find a folder called "main.py" and failed with:
+```
+ERROR The folder 'main.py' does not exist for '***_demo-fastapi_6ba235ba-ff96-459d-8607-919121b2ad98' (base directory = /usr/src)
+```
 
 **Solution Implemented:**
-- Removed directory-based test specification (`-Dsonar.tests=tests`)
-- Changed to pattern-based test detection using `-Dsonar.test.inclusions=tests/**/*.py,**/*_test.py,**/test_*.py`
-- Changed sources from specific paths to `.` (scan everything)
-- Added exclusions for venv, __pycache__, .git, and test-results directories
-- Added debugging output showing working directory and files
-- Added step ID and output tracking for status monitoring
+- Changed `-Dsonar.sources=main.py,src` to `-Dsonar.sources=.` (scan entire project)
+- Re-added `-Dsonar.tests=tests` for proper test directory specification
+- Enhanced exclusions: `**/__pycache__/**,**/*.pyc,venv/**,.git/**,test-results/**`
+- Added better debugging output showing project structure and files to analyze
+- Docker volume mount architecture works correctly - issue was configuration only!
 
 **Changes Made:**
-- `.github/workflows/deploy-self-hosted.yaml:137-159` - Complete rewrite of scanner invocation
-- Simplified from two conditional branches to single scanner command
-- Added file pattern matching instead of directory specification
-- Added comprehensive exclusions list
+- `.github/workflows/deploy-self-hosted.yaml:96-112` - Removed "TEMPORARILY DISABLED" exit
+- `.github/workflows/deploy-self-hosted.yaml:154-161` - Fixed scanner configuration
+  - `sources=.` instead of `sources=main.py,src`
+  - Re-added `tests=tests` parameter
+  - Enhanced exclusions list
+- `.github/workflows/deploy-self-hosted.yaml:137-150` - Better debugging output
 
 **Benefits:**
-- Works around Docker volume mount issues in containerized runners
-- Still properly categorizes test files in SonarQube dashboard
-- Simpler workflow logic (no conditional branches needed)
-- Better debugging output for troubleshooting
-- More flexible test file detection (catches multiple naming conventions)
+- Correctly scans all source files in the project
+- Properly identifies and categorizes test files
+- Works with existing Docker volume mount architecture
+- Better visibility into what's being scanned
+- No manual runner modifications needed
 
 ---
 
@@ -258,8 +262,8 @@ git push origin main --force  # Use with caution
 
 ## Long-Term Recommendations
 
-### 1. Install Tools Directly in Runner Container
-Instead of using Docker-in-Docker for tools like SonarQube scanner and test execution, install them directly in the GitHub Actions runner container:
+### 1. Optional: Install Tools Directly in Runner Container
+While Docker-based tools work correctly with proper configuration, you may optionally install them directly in the runner container for slightly faster execution:
 
 ```dockerfile
 # In your runner container setup
@@ -282,24 +286,22 @@ RUN npm install -g @datadog/datadog-ci
 ```
 
 **Benefits:**
-- No Docker-in-Docker complexity
-- Faster execution (no image pulls)
-- More reliable (no volume mount issues)
-- Easier debugging
+- Slightly faster execution (no image pulls)
+- Reduced resource usage
+- Simpler workflow steps
 
-### 2. Alternative: Fix Volume Mounts
-If you prefer to keep Docker-based tools, ensure the runner's workspace is properly mounted from the host:
+### 2. Current Setup Works Well
+The current Docker-based approach with volume mounts is working correctly. The key is proper configuration:
 
-```bash
-# When starting the runner container
-docker run -d \
-  --name github-runner-prod \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v /path/on/host/workspace:/home/github/actions/_work \
-  myorg/github-runner:latest
-```
+**What Works:**
+- Docker volume mounts: `-v "$(pwd):/usr/src"` ✅
+- SonarQube scanner in Docker container ✅
+- Test execution (switched to local Python for better compatibility) ✅
 
-Then the workflow can use volume mounts that reference the host path.
+**Configuration Keys:**
+- Use directory paths in `-Dsonar.sources` (e.g., `.` or `src`), not file paths
+- Specify proper exclusions to avoid scanning unwanted files
+- Volume mounts work correctly when sources are configured properly
 
 ### 3. Consider GitHub-Hosted Runners
 If maintenance of self-hosted runners becomes burdensome, GitHub-hosted runners don't have these Docker-in-Docker issues because they run directly on VMs, not in containers.

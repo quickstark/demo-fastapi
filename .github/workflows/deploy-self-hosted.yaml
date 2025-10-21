@@ -134,16 +134,20 @@ jobs:
           echo "::group::🔍 Phase 2: Code Analysis"
           SCAN_START=$(date +%s)
           
-          # Run SonarQube scan with explicit sources and pattern-based test detection
-          # Note: Using test.inclusions instead of tests directory parameter to avoid
-          # Docker volume mount directory validation issues in containerized runner
+          # Run SonarQube scan with proper source configuration
+          # Using sources=. to scan entire project directory with exclusions
           echo "Running SonarQube scanner..."
           echo "Working directory: $(pwd)"
-          echo "Files in workspace:"
+          echo ""
+          echo "📁 Project structure:"
           ls -la | head -15
           echo ""
-          echo "Python files to analyze:"
-          find . -name "*.py" -not -path "./venv/*" -not -path "./.git/*" | head -20
+          echo "🐍 Python files to analyze:"
+          find . -name "*.py" -not -path "./venv/*" -not -path "./.git/*" -not -path "./test-results/*" | head -20
+          echo ""
+          echo "🧪 Test files:"
+          find tests -name "*.py" 2>/dev/null | head -10 || echo "No tests directory found"
+          echo ""
 
           docker run --rm \
             -e SONAR_HOST_URL="$SONAR_HOST_URL" \
@@ -151,9 +155,10 @@ jobs:
             -v "$(pwd):/usr/src" \
             sonarsource/sonar-scanner-cli \
             -Dsonar.projectKey=quickstark_demo-fastapi_6ba235ba-ff96-459d-8607-919121b2ad98 \
-            -Dsonar.sources=main.py,src \
+            -Dsonar.sources=. \
+            -Dsonar.tests=tests \
             -Dsonar.test.inclusions=tests/**/*.py,**/*_test.py,**/test_*.py \
-            -Dsonar.exclusions=**/__pycache__/**,**/*.pyc,venv/** \
+            -Dsonar.exclusions=**/__pycache__/**,**/*.pyc,venv/**,.git/**,test-results/** \
             -Dsonar.language=py \
             -Dsonar.python.version=3.9,3.10,3.11,3.12 \
             -Dsonar.sourceEncoding=UTF-8 \
