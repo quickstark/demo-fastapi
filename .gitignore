@@ -7,6 +7,7 @@ __pycache__/
 *.so
 
 # Distribution / packaging
+compose/
 .cursor
 datadog.yaml
 datadog-agent.yaml

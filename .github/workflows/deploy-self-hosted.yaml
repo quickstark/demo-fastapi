@@ -128,6 +128,15 @@ jobs:
           echo "::group::🔍 Phase 2: Code Analysis"
           SCAN_START=$(date +%s)
           
+          # Check if tests directory exists
+          if [ -d "tests" ]; then
+            SONAR_TESTS_PARAM="-Dsonar.tests=tests"
+            echo "✓ Tests directory found, including in SonarQube scan"
+          else
+            SONAR_TESTS_PARAM=""
+            echo "⚠️  No tests directory found, skipping test analysis"
+          fi
+          
           docker run --rm \
             -e SONAR_HOST_URL="$SONAR_HOST_URL" \
             -e SONAR_TOKEN="$SONAR_TOKEN" \
@@ -135,7 +144,7 @@ jobs:
             sonarsource/sonar-scanner-cli \
             -Dsonar.projectKey=quickstark_demo-fastapi_6ba235ba-ff96-459d-8607-919121b2ad98 \
             -Dsonar.sources=main.py,src \
-            -Dsonar.tests=tests \
+            $SONAR_TESTS_PARAM \
             -Dsonar.language=py \
             -Dsonar.python.version=3.9,3.10,3.11,3.12 \
             -Dsonar.sourceEncoding=UTF-8 || {
@@ -281,16 +290,24 @@ jobs:
           # Create test-results directory
           mkdir -p test-results
           
+          # Check if we have tests to run
+          if [ ! -f "requirements.txt" ]; then
+            echo "⚠️  No requirements.txt found - skipping tests"
+            echo "tests_generated=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          if [ ! -d "tests" ]; then
+            echo "⚠️  No tests directory found - skipping tests"
+            echo "tests_generated=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
           if command -v docker &> /dev/null && docker ps &> /dev/null; then
             echo "Running tests in Docker container..."
             echo "Current directory: $(pwd)"
-            echo "Checking for requirements.txt..."
-            if [ -f "requirements.txt" ]; then
-              echo "✓ Found requirements.txt"
-            else
-              echo "✗ requirements.txt not found in $(pwd)"
-              ls -la
-            fi
+            echo "✓ Found requirements.txt"
+            echo "✓ Found tests directory"
 
             # Run tests with JUnit XML output for Datadog
             docker run --rm \
@@ -520,7 +537,7 @@ jobs:
       
       # Mark Deployment in Datadog
       - name: Mark Deployment in Datadog
-        if: ${{ success() && steps.datadog_setup.outputs.datadog_ci_available == 'true' }}
+        if: success()
         continue-on-error: true
         env:
           DD_API_KEY: ${{ secrets.DD_API_KEY }}
@@ -545,9 +562,19 @@ jobs:
 
           # Check if datadog-ci is available
           if ! command -v datadog-ci &> /dev/null; then
-            echo "❌ ERROR: datadog-ci is not available"
+            echo ""
+            echo "❌ ERROR: datadog-ci is not installed"
+            echo ""
+            echo "To fix this, SSH to your runner and install Node.js + datadog-ci:"
+            echo "  docker exec -u root -it github-runner-prod bash"
+            echo "  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -"
+            echo "  apt-get install -y nodejs"
+            echo "  npm install -g @datadog/datadog-ci"
+            echo "  exit"
+            echo ""
             echo "⚠️  Deployment marking skipped"
-            exit 1
+            echo "⚠️  See RUNNER_SETUP_FIX.md for detailed instructions"
+            exit 0
           fi
 
           echo "✓ Found datadog-ci: $(datadog-ci version)"
@@ -565,12 +592,11 @@ jobs:
             --no-fail; then
             echo ""
             echo "✅ Deployment marked successfully in Datadog"
-            echo "🔗 View in Datadog: https://app.datadoghq.com/services/service/$DD_SERVICE/deployments?env=$DD_ENV"
+            echo "🔗 View in Datadog: https://app.datadoghq.com/apm/services/$DD_SERVICE/deployments?env=$DD_ENV"
             echo ""
           else
             echo ""
             echo "❌ Failed to mark deployment in Datadog"
             echo "   Check DD_API_KEY and network connectivity"
             echo ""
-            exit 1
           fi

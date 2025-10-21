@@ -1,0 +1,30 @@
+# Custom GitHub Actions Runner with Node.js and Datadog CI
+# Extends the base runner image with pre-installed dependencies
+
+FROM ghcr.io/kevmo314/docker-gha-runner:main
+
+# Switch to root to install packages
+USER root
+
+# Install Node.js 20.x
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs python3-venv && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install datadog-ci globally
+RUN npm install -g @datadog/datadog-ci
+
+# Verify installations
+RUN echo "Verifying installations..." && \
+    node --version && \
+    npm --version && \
+    datadog-ci version && \
+    python3 -m venv --help > /dev/null 2>&1 && \
+    echo "✅ All packages installed successfully!"
+
+# Switch back to the github user (the image's default)
+USER github
+
+# The original entrypoint will be preserved
+
