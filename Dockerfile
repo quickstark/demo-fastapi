@@ -1,5 +1,9 @@
 FROM python:3.12-slim
 
+# Accept git metadata as build arguments for Datadog source code linking
+ARG DD_GIT_REPOSITORY_URL
+ARG DD_GIT_COMMIT_SHA
+
 WORKDIR /app
 
 # Install system dependencies and clean up in one layer
@@ -33,7 +37,9 @@ ENV PYTHONPATH=/app \
     DD_IAST_ENABLED=true \
     DD_LLMOBS_ENABLED=true \
     DD_LLMOBS_ML_APP=youtube-summarizer \
-    DD_LLMOBS_EVALUATORS="ragas_faithfulness,ragas_context_precision,ragas_answer_relevancy"
+    DD_LLMOBS_EVALUATORS="ragas_faithfulness,ragas_context_precision,ragas_answer_relevancy" \
+    DD_GIT_REPOSITORY_URL=${DD_GIT_REPOSITORY_URL} \
+    DD_GIT_COMMIT_SHA=${DD_GIT_COMMIT_SHA}
 
 # Use python -m to run hypercorn
 CMD ["python", "-m", "hypercorn", "main:app", "--bind", "0.0.0.0:8080"]

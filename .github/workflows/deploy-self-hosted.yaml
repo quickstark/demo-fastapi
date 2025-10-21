@@ -382,9 +382,13 @@ jobs:
             
             # Login to Docker Hub
             echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login --username "${{ secrets.DOCKERHUB_USER }}" --password-stdin
-            
-            # Build the image
-            docker build -t quickstark/api-images:latest .
+
+            # Build the image with git metadata for Datadog source code linking
+            docker build \
+              -t quickstark/api-images:latest \
+              --build-arg DD_GIT_REPOSITORY_URL=https://github.com/${{ github.repository }} \
+              --build-arg DD_GIT_COMMIT_SHA=${{ github.sha }} \
+              .
             
             # Tag with commit SHA
             docker tag quickstark/api-images:latest quickstark/api-images:${{ github.sha }}
