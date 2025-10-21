@@ -497,11 +497,12 @@ jobs:
           DD_SITE: datadoghq.com
           DD_ENV: ${{ secrets.DD_ENV }}
           DD_SERVICE: ${{ secrets.DD_SERVICE }}
+          DD_GITHUB_JOB_NAME: build-and-deploy
         run: |
           echo "=========================================="
           echo "Marking Deployment in Datadog"
           echo "=========================================="
-          
+
           # Get short SHA for reference
           SHORT_SHA="${{ github.sha }}"
           SHORT_SHA="${SHORT_SHA:0:7}"
@@ -530,19 +531,16 @@ jobs:
           fi
 
           echo "✓ Found datadog-ci: $(datadog-ci version)"
+          echo ""
 
-          # Mark deployment in Datadog using DORA metrics API
-          # Note: v4.0.2 uses 'dora deployment' instead of 'deployment mark'
-          DEPLOYMENT_START=$(date -u +"%s")
-
-          if datadog-ci dora deployment \
+          # Mark deployment in Datadog
+          # Using 'deployment mark' command as per Datadog documentation
+          # Requires datadog-ci v2.29.0+ (current version is v4.0.2)
+          if datadog-ci deployment mark \
             --service "$DD_SERVICE" \
             --env "$DD_ENV" \
-            --version "${{ steps.version.outputs.version }}" \
-            --started-at "$DEPLOYMENT_START" \
-            --git-commit-sha "${{ github.sha }}" \
-            --git-repository-url "https://github.com/${{ github.repository }}" \
-            --custom-tags "deployment_method:self_hosted,repository:${{ github.repository }},branch:${{ github.ref_name }},runner:containerized"; then
+            --revision "${{ steps.version.outputs.version }}" \
+            --tags "deployment_method:self_hosted,repository:${{ github.repository }},branch:${{ github.ref_name }},runner:containerized,git_sha:$SHORT_SHA"; then
             echo ""
             echo "✅ Deployment marked successfully in Datadog"
             echo "🔗 View in Datadog: https://app.datadoghq.com/apm/services/$DD_SERVICE/deployments?env=$DD_ENV"
