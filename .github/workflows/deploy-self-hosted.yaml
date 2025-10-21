@@ -222,8 +222,17 @@ jobs:
         run: |
           if command -v docker &> /dev/null && docker ps &> /dev/null; then
             echo "Running tests in Docker container..."
+            echo "Current directory: $(pwd)"
+            echo "Checking for requirements.txt..."
+            if [ -f "requirements.txt" ]; then
+              echo "✓ Found requirements.txt"
+            else
+              echo "✗ requirements.txt not found in $(pwd)"
+              ls -la
+            fi
+
             docker run --rm \
-              -v $(pwd):/app \
+              -v "$(pwd)":/app \
               -w /app \
               -e MONGO_CONN=localhost \
               -e MONGO_USER=testuser \
@@ -237,7 +246,7 @@ jobs:
               -e AMAZON_KEY_SECRET=dummy-key-for-testing \
               -e AMAZON_S3_BUCKET=dummy-bucket-for-testing \
               -e BUG_REPORT_EMAIL=test@example.com \
-              python:3.12-slim bash -c "pip install -r requirements.txt && pytest -v" || echo "Tests failed or skipped"
+              python:3.12-slim bash -c "ls -la && pip install -r requirements.txt && pytest -v" || echo "⚠️  Tests failed or were skipped"
           elif command -v python3 &> /dev/null; then
             echo "Running tests with local Python..."
             source venv/bin/activate || true
@@ -370,9 +379,36 @@ jobs:
             echo "Check the logs above for details"
           fi
       
+      # Install Node.js and datadog-ci for containerized runners
+      - name: Setup Node.js for Datadog CI
+        if: success()
+        run: |
+          echo "Checking for Node.js and npm..."
+          if ! command -v node &> /dev/null; then
+            echo "Node.js not found, attempting installation..."
+            if command -v apt-get &> /dev/null; then
+              curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+              apt-get install -y nodejs
+            elif command -v apk &> /dev/null; then
+              apk add --no-cache nodejs npm
+            else
+              echo "⚠️  Could not install Node.js automatically"
+            fi
+          else
+            echo "✓ Node.js already installed: $(node --version)"
+          fi
+
+          if ! command -v npm &> /dev/null; then
+            echo "❌ npm not available"
+          else
+            echo "✓ npm available: $(npm --version)"
+          fi
+
       - name: Mark Deployment in Datadog
         if: success()
         continue-on-error: true
+        env:
+          DD_API_KEY: ${{ secrets.DD_API_KEY }}
         run: |
           # Get short SHA for reference
           SHORT_SHA="${{ github.sha }}"
@@ -380,10 +416,21 @@ jobs:
 
           echo "📦 Marking deployment with version: ${{ steps.version.outputs.version }}"
           echo "🔖 Git SHA: $SHORT_SHA"
+          echo ""
+
+          # Check if DD_API_KEY is set
+          if [ -z "$DD_API_KEY" ]; then
+            echo "❌ ERROR: DD_API_KEY is not set in secrets"
+            echo "⚠️  Deployment marking skipped - please configure DD_API_KEY"
+            exit 0
+          fi
+
+          DEPLOYMENT_MARKED=false
 
           # First try with existing datadog-ci if available
           if command -v datadog-ci &> /dev/null; then
-            datadog-ci deployment mark \
+            echo "✓ Found datadog-ci in PATH"
+            if datadog-ci deployment mark \
               --env "${{ secrets.DD_ENV }}" \
               --service "${{ secrets.DD_SERVICE }}" \
               --revision "${{ steps.version.outputs.version }}" \
@@ -391,28 +438,56 @@ jobs:
               --tags "repository:${{ github.repository }}" \
               --tags "branch:${{ github.ref_name }}" \
               --tags "git_sha:$SHORT_SHA" \
-              --no-fail || true
-          # Otherwise try to install it locally (not globally)
+              --no-fail; then
+              DEPLOYMENT_MARKED=true
+              echo "✅ Deployment marked successfully with datadog-ci"
+            fi
+          # Otherwise try to install it locally
           elif command -v npm &> /dev/null; then
+            echo "✓ Found npm, installing datadog-ci locally..."
             # Install locally to avoid permission issues
-            npm install @datadog/datadog-ci 2>/dev/null || true
-
-            if [ -f "$(pwd)/node_modules/.bin/datadog-ci" ]; then
-              $(pwd)/node_modules/.bin/datadog-ci deployment mark \
-                --env "${{ secrets.DD_ENV }}" \
-                --service "${{ secrets.DD_SERVICE }}" \
-                --revision "${{ steps.version.outputs.version }}" \
-                --tags "deployment_method:self_hosted" \
-                --tags "repository:${{ github.repository }}" \
-                --tags "branch:${{ github.ref_name }}" \
-                --tags "git_sha:$SHORT_SHA" \
-                --no-fail || true
+            if npm install @datadog/datadog-ci 2>&1; then
+              echo "✓ datadog-ci installed successfully"
+              if [ -f "$(pwd)/node_modules/.bin/datadog-ci" ]; then
+                echo "✓ Found datadog-ci binary"
+                if $(pwd)/node_modules/.bin/datadog-ci deployment mark \
+                  --env "${{ secrets.DD_ENV }}" \
+                  --service "${{ secrets.DD_SERVICE }}" \
+                  --revision "${{ steps.version.outputs.version }}" \
+                  --tags "deployment_method:self_hosted" \
+                  --tags "repository:${{ github.repository }}" \
+                  --tags "branch:${{ github.ref_name }}" \
+                  --tags "git_sha:$SHORT_SHA" \
+                  --no-fail; then
+                  DEPLOYMENT_MARKED=true
+                  echo "✅ Deployment marked successfully with local datadog-ci"
+                else
+                  echo "❌ datadog-ci command failed"
+                fi
+              else
+                echo "❌ datadog-ci binary not found after installation"
+              fi
+            else
+              echo "❌ npm install failed"
             fi
           else
-            echo "⚠️  Datadog CI not available, skipping deployment marking"
+            echo "❌ Neither datadog-ci nor npm is available"
           fi
 
-          echo "✅ Deployment marked in Datadog with version ${{ steps.version.outputs.version }}"
+          if [ "$DEPLOYMENT_MARKED" = false ]; then
+            echo ""
+            echo "⚠️  WARNING: Deployment was NOT marked in Datadog"
+            echo ""
+            echo "For containerized runners, consider one of these approaches:"
+            echo "1. Build custom runner image with Node.js and datadog-ci pre-installed"
+            echo "2. Install Node.js in the runner container startup script"
+            echo "3. Use Datadog HTTP API instead (see documentation)"
+            echo ""
+          else
+            echo ""
+            echo "🎉 Deployment successfully marked in Datadog with version ${{ steps.version.outputs.version }}"
+            echo ""
+          fi
       
       - name: Post Checkout code
         run: |
