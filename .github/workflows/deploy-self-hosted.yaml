@@ -543,48 +543,28 @@ jobs:
           echo "✓ Found datadog-ci: $(datadog-ci version)"
           echo ""
 
-          # Mark deployment in Datadog via Events API
-          # Note: 'deployment mark' command doesn't exist in datadog-ci v4.x
-          # Using HTTP API for version-agnostic deployment tracking
-          TIMESTAMP=$(date -u +"%s")
+          # Mark deployment in Datadog CD Visibility
+          # Note: 'deployment mark' is a BETA command requiring DD_BETA_COMMANDS_ENABLED=1
+          echo "Marking deployment in Datadog CD Visibility..."
 
-          echo "Sending deployment event to Datadog Events API..."
-          HTTP_CODE=$(curl -X POST "https://api.datadoghq.com/api/v1/events" \
-            -H "Content-Type: application/json" \
-            -H "DD-API-KEY: ${DD_API_KEY}" \
-            -w "%{http_code}" \
-            -o /tmp/dd_response.json \
-            -s \
-            -d @- <<EOF
-          {
-            "title": "Deployment: $DD_SERVICE v${{ steps.version.outputs.version }}",
-            "text": "Deployed version ${{ steps.version.outputs.version }} to $DD_ENV environment\\n\\nGit SHA: $SHORT_SHA\\nRepository: ${{ github.repository }}\\nBranch: ${{ github.ref_name }}",
-            "tags": [
-              "service:$DD_SERVICE",
-              "env:$DD_ENV",
-              "version:${{ steps.version.outputs.version }}",
-              "deployment_method:self_hosted",
-              "git_sha:$SHORT_SHA",
-              "repository:${{ github.repository }}",
-              "branch:${{ github.ref_name }}",
-              "runner:containerized"
-            ],
-            "alert_type": "info",
-            "source_type_name": "github",
-            "date_happened": $TIMESTAMP
-          }
-          EOF
-          )
-
-          if [ "$HTTP_CODE" -eq 202 ] || [ "$HTTP_CODE" -eq 200 ]; then
+          if DD_BETA_COMMANDS_ENABLED=1 datadog-ci deployment mark \
+            --service "$DD_SERVICE" \
+            --env "$DD_ENV" \
+            --revision "${{ steps.version.outputs.version }}" \
+            --tags "deployment_method:self_hosted" \
+            --tags "repository:${{ github.repository }}" \
+            --tags "branch:${{ github.ref_name }}" \
+            --tags "git_sha:$SHORT_SHA" \
+            --tags "runner:containerized" \
+            --no-fail; then
             echo ""
-            echo "✅ Deployment event sent successfully (HTTP $HTTP_CODE)"
-            echo "🔗 View in Datadog Events: https://app.datadoghq.com/event/stream?query=service:$DD_SERVICE"
+            echo "✅ Deployment marked successfully in Datadog CD Visibility"
+            echo "🔗 View CD Deployments: https://app.datadoghq.com/ci/deployments?env=$DD_ENV"
             echo "🔗 View APM Deployments: https://app.datadoghq.com/apm/services/$DD_SERVICE/deployments?env=$DD_ENV"
             echo ""
           else
             echo ""
-            echo "❌ Deployment event failed (HTTP $HTTP_CODE)"
-            cat /tmp/dd_response.json
+            echo "❌ Failed to mark deployment in Datadog"
+            echo "   Check DD_API_KEY and DD_BETA_COMMANDS_ENABLED"
             echo ""
           fi
