@@ -87,6 +87,8 @@ jobs:
       
       # ===== SonarQube Analysis with Timing Metrics =====
       - name: SonarQube Analysis with Timing Metrics
+        id: sonarqube_analysis
+        continue-on-error: true
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
@@ -94,8 +96,12 @@ jobs:
           # Skip if no credentials
           if [ -z "$SONAR_TOKEN" ] || [ -z "$SONAR_HOST_URL" ]; then
             echo "⚠️  SonarQube credentials not configured - skipping"
+            echo "sonarqube_completed=false" >> $GITHUB_OUTPUT
             exit 0
           fi
+
+          echo "✓ SonarQube Host: $SONAR_HOST_URL"
+          echo "✓ SonarQube Token: ${SONAR_TOKEN:0:8}..."
           
           # Function to send timing metric to Datadog
           send_timing() {
@@ -128,29 +134,39 @@ jobs:
           echo "::group::🔍 Phase 2: Code Analysis"
           SCAN_START=$(date +%s)
           
-          # Check if tests directory exists
+          # Check if tests directory exists and build SonarQube command
           if [ -d "tests" ]; then
-            SONAR_TESTS_PARAM="-Dsonar.tests=tests"
             echo "✓ Tests directory found, including in SonarQube scan"
+            docker run --rm \
+              -e SONAR_HOST_URL="$SONAR_HOST_URL" \
+              -e SONAR_TOKEN="$SONAR_TOKEN" \
+              -v "$(pwd):/usr/src" \
+              sonarsource/sonar-scanner-cli \
+              -Dsonar.projectKey=quickstark_demo-fastapi_6ba235ba-ff96-459d-8607-919121b2ad98 \
+              -Dsonar.sources=main.py,src \
+              -Dsonar.tests=tests \
+              -Dsonar.language=py \
+              -Dsonar.python.version=3.9,3.10,3.11,3.12 \
+              -Dsonar.sourceEncoding=UTF-8 || {
+                echo "⚠️  SonarQube scan failed - continuing deployment"
+                exit 0
+              }
           else
-            SONAR_TESTS_PARAM=""
-            echo "⚠️  No tests directory found, skipping test analysis"
+            echo "⚠️  No tests directory found, scanning sources only"
+            docker run --rm \
+              -e SONAR_HOST_URL="$SONAR_HOST_URL" \
+              -e SONAR_TOKEN="$SONAR_TOKEN" \
+              -v "$(pwd):/usr/src" \
+              sonarsource/sonar-scanner-cli \
+              -Dsonar.projectKey=quickstark_demo-fastapi_6ba235ba-ff96-459d-8607-919121b2ad98 \
+              -Dsonar.sources=main.py,src \
+              -Dsonar.language=py \
+              -Dsonar.python.version=3.9,3.10,3.11,3.12 \
+              -Dsonar.sourceEncoding=UTF-8 || {
+                echo "⚠️  SonarQube scan failed - continuing deployment"
+                exit 0
+              }
           fi
-          
-          docker run --rm \
-            -e SONAR_HOST_URL="$SONAR_HOST_URL" \
-            -e SONAR_TOKEN="$SONAR_TOKEN" \
-            -v "$(pwd):/usr/src" \
-            sonarsource/sonar-scanner-cli \
-            -Dsonar.projectKey=quickstark_demo-fastapi_6ba235ba-ff96-459d-8607-919121b2ad98 \
-            -Dsonar.sources=main.py,src \
-            $SONAR_TESTS_PARAM \
-            -Dsonar.language=py \
-            -Dsonar.python.version=3.9,3.10,3.11,3.12 \
-            -Dsonar.sourceEncoding=UTF-8 || {
-              echo "⚠️  SonarQube scan failed - continuing deployment"
-              exit 0
-            }
           
           SCAN_END=$(date +%s)
           SCAN_DURATION=$((SCAN_END - SCAN_START))
@@ -213,9 +229,9 @@ jobs:
           TOTAL_END=$(date +%s)
           TOTAL_DURATION=$((TOTAL_END - TOTAL_START))
           send_timing "sonarqube.total" "$((TOTAL_DURATION * 1000))" "#project:demo-fastapi"
-          
+
           echo "::notice title=SonarQube Complete::Analysis completed in ${TOTAL_DURATION} seconds (Bugs: $BUGS, Vulnerabilities: $VULNS, Coverage: $COVERAGE%)"
-        continue-on-error: true
+          echo "sonarqube_completed=true" >> $GITHUB_OUTPUT
       
       # ===== System Information =====
       - name: System Information
@@ -265,20 +281,7 @@ jobs:
           echo "=========================="
       
       # ===== Testing =====
-      - name: Setup Python Environment (if available)
-        if: ${{ !inputs.skip_tests || github.event_name == 'push' }}
-        run: |
-          if command -v python3 &> /dev/null; then
-            echo "Setting up Python environment..."
-            python3 -m venv venv || true
-            source venv/bin/activate || true
-            pip install --upgrade pip || true
-            pip install -r requirements.txt || true
-          else
-            echo "Python not available, skipping Python setup"
-          fi
-      
-      - name: Run Tests in Container
+      - name: Setup Python Environment and Run Tests
         id: run_tests
         if: ${{ !inputs.skip_tests || github.event_name == 'push' }}
         continue-on-error: true
@@ -286,92 +289,101 @@ jobs:
           echo "=========================================="
           echo "Running Tests with JUnit XML Output"
           echo "=========================================="
-          
+
           # Create test-results directory
           mkdir -p test-results
-          
+
           # Check if we have tests to run
           if [ ! -f "requirements.txt" ]; then
             echo "⚠️  No requirements.txt found - skipping tests"
             echo "tests_generated=false" >> $GITHUB_OUTPUT
             exit 0
           fi
-          
+
           if [ ! -d "tests" ]; then
             echo "⚠️  No tests directory found - skipping tests"
             echo "tests_generated=false" >> $GITHUB_OUTPUT
             exit 0
           fi
-          
-          if command -v docker &> /dev/null && docker ps &> /dev/null; then
-            echo "Running tests in Docker container..."
-            echo "Current directory: $(pwd)"
-            echo "✓ Found requirements.txt"
-            echo "✓ Found tests directory"
 
-            # Run tests with JUnit XML output for Datadog
-            docker run --rm \
-              -v "$(pwd)":/app \
-              -w /app \
-              -e MONGO_CONN=localhost \
-              -e MONGO_USER=testuser \
-              -e MONGO_PW=testpass \
-              -e OPENAI_API_KEY=dummy-key-for-testing \
-              -e SES_REGION=us-east-1 \
-              -e SES_FROM_EMAIL=test@example.com \
-              -e NOTION_API_KEY=dummy-key-for-testing \
-              -e NOTION_DATABASE_ID=dummy-key-for-testing \
-              -e AMAZON_KEY_ID=dummy-key-for-testing \
-              -e AMAZON_KEY_SECRET=dummy-key-for-testing \
-              -e AMAZON_S3_BUCKET=dummy-bucket-for-testing \
-              -e BUG_REPORT_EMAIL=test@example.com \
-              python:3.12-slim bash -c "pip install -r requirements.txt && pytest -v --junitxml=test-results/junit.xml --tb=short" || TEST_EXIT_CODE=$?
-            
+          echo "✓ Found requirements.txt"
+          echo "✓ Found tests directory"
+          echo "Current directory: $(pwd)"
+
+          # Try local Python first (works better in containerized runners)
+          if command -v python3 &> /dev/null; then
+            echo "=========================================="
+            echo "Method 1: Running tests with local Python"
+            echo "=========================================="
+
+            # Create and activate virtual environment
+            echo "Setting up Python virtual environment..."
+            python3 -m venv venv
+            source venv/bin/activate
+
+            # Install dependencies
+            echo "Installing dependencies..."
+            pip install --upgrade pip --quiet
+            pip install -r requirements.txt --quiet
+
+            # Verify pytest is installed
+            if ! command -v pytest &> /dev/null; then
+              echo "❌ pytest not found after installation"
+              echo "tests_generated=false" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+
+            echo "✓ pytest version: $(pytest --version)"
+            echo ""
+            echo "Running tests..."
+
+            # Run tests with proper environment variables
+            MONGO_CONN=localhost \
+            MONGO_USER=testuser \
+            MONGO_PW=testpass \
+            OPENAI_API_KEY=dummy-key-for-testing \
+            SES_REGION=us-east-1 \
+            SES_FROM_EMAIL=test@example.com \
+            NOTION_API_KEY=dummy-key-for-testing \
+            NOTION_DATABASE_ID=dummy-key-for-testing \
+            AMAZON_KEY_ID=dummy-key-for-testing \
+            AMAZON_KEY_SECRET=dummy-key-for-testing \
+            AMAZON_S3_BUCKET=dummy-bucket-for-testing \
+            BUG_REPORT_EMAIL=test@example.com \
+            pytest -v --junitxml=test-results/junit.xml --tb=short || TEST_EXIT_CODE=$?
+
+            # Check if test results were generated
             if [ -f "test-results/junit.xml" ]; then
+              echo ""
               echo "✅ Test results generated: test-results/junit.xml"
+              ls -lh test-results/junit.xml
               echo "tests_generated=true" >> $GITHUB_OUTPUT
-              
-              # Show test summary
+
+              # Show test summary if xmllint available
               if command -v xmllint &> /dev/null; then
                 TESTS=$(xmllint --xpath "string(//testsuite/@tests)" test-results/junit.xml 2>/dev/null || echo "?")
                 FAILURES=$(xmllint --xpath "string(//testsuite/@failures)" test-results/junit.xml 2>/dev/null || echo "?")
                 ERRORS=$(xmllint --xpath "string(//testsuite/@errors)" test-results/junit.xml 2>/dev/null || echo "?")
-                echo "Tests: $TESTS, Failures: $FAILURES, Errors: $ERRORS"
+                echo "Test Summary - Tests: $TESTS, Failures: $FAILURES, Errors: $ERRORS"
               fi
             else
-              echo "⚠️  No test results file generated"
+              echo "⚠️  No test results file generated at test-results/junit.xml"
               echo "tests_generated=false" >> $GITHUB_OUTPUT
             fi
-            
+
+            # Record test outcome
             if [ -n "$TEST_EXIT_CODE" ] && [ "$TEST_EXIT_CODE" != "0" ]; then
-              echo "⚠️  Tests failed with exit code $TEST_EXIT_CODE"
+              echo "⚠️  Tests completed with exit code $TEST_EXIT_CODE"
               echo "tests_passed=false" >> $GITHUB_OUTPUT
             else
               echo "✅ All tests passed"
               echo "tests_passed=true" >> $GITHUB_OUTPUT
             fi
-            
-          elif command -v python3 &> /dev/null; then
-            echo "Running tests with local Python..."
-            source venv/bin/activate || true
-            pytest -v --junitxml=test-results/junit.xml --tb=short || TEST_EXIT_CODE=$?
-            
-            if [ -f "test-results/junit.xml" ]; then
-              echo "✅ Test results generated"
-              echo "tests_generated=true" >> $GITHUB_OUTPUT
-            else
-              echo "⚠️  No test results generated"
-              echo "tests_generated=false" >> $GITHUB_OUTPUT
-            fi
-            
-            if [ -n "$TEST_EXIT_CODE" ] && [ "$TEST_EXIT_CODE" != "0" ]; then
-              echo "tests_passed=false" >> $GITHUB_OUTPUT
-            else
-              echo "tests_passed=true" >> $GITHUB_OUTPUT
-            fi
+
           else
-            echo "⚠️  Cannot run tests - no Python or Docker available"
+            echo "⚠️  Python not available - cannot run tests"
             echo "tests_generated=false" >> $GITHUB_OUTPUT
+            echo "tests_passed=false" >> $GITHUB_OUTPUT
           fi
       
       # Upload test results to Datadog
@@ -388,27 +400,39 @@ jobs:
           echo "=========================================="
           echo "Uploading Test Results to Datadog"
           echo "=========================================="
-          
+
+          # Verify test results file exists
           if [ ! -f "test-results/junit.xml" ]; then
-            echo "❌ Test results file not found"
+            echo "❌ Test results file not found at test-results/junit.xml"
+            echo "Current directory: $(pwd)"
+            echo "Contents of test-results directory:"
+            ls -la test-results/ || echo "test-results directory not found"
             exit 1
           fi
-          
+
           echo "✓ Found test results file"
+          ls -lh test-results/junit.xml
+
+          # Verify Datadog configuration
           echo "✓ Service: $DD_SERVICE"
           echo "✓ Environment: $DD_ENV"
-          
+          echo "✓ DD_API_KEY: ${DD_API_KEY:0:8}..."
+          echo "✓ datadog-ci version: $(datadog-ci version)"
+
           # Upload test results using datadog-ci
-          datadog-ci junit upload \
+          echo ""
+          echo "Uploading to Datadog..."
+          if datadog-ci junit upload \
             --service "$DD_SERVICE" \
             --env "$DD_ENV" \
-            test-results/junit.xml
-          
-          if [ $? -eq 0 ]; then
+            test-results/junit.xml; then
+            echo ""
             echo "✅ Test results uploaded to Datadog successfully"
             echo "🔗 View in Datadog: https://app.datadoghq.com/ci/test-runs?env=$DD_ENV&service=$DD_SERVICE"
           else
+            echo ""
             echo "❌ Failed to upload test results to Datadog"
+            echo "Check DD_API_KEY and network connectivity"
           fi
       
       # ===== Build and Push =====
@@ -537,7 +561,7 @@ jobs:
       
       # Mark Deployment in Datadog
       - name: Mark Deployment in Datadog
-        if: success()
+        if: steps.docker_build.outcome == 'success'
         continue-on-error: true
         env:
           DD_API_KEY: ${{ secrets.DD_API_KEY }}
