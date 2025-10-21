@@ -86,8 +86,16 @@ jobs:
           echo "📦 Deployment Version: $VERSION"
       
       # ===== SonarQube Analysis with Timing Metrics =====
-      - name: SonarQube Analysis with Timing Metrics
-        id: sonarqube_analysis
+      # SonarQube Code Analysis (Simple approach that works)
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v6
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        continue-on-error: true
+
+      - name: SonarQube Metrics to Datadog
+        id: sonarqube_metrics
         continue-on-error: true
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -95,89 +103,11 @@ jobs:
         run: |
           # Skip if no credentials
           if [ -z "$SONAR_TOKEN" ] || [ -z "$SONAR_HOST_URL" ]; then
-            echo "⚠️  SonarQube credentials not configured - skipping"
-            echo "sonarqube_completed=false" >> $GITHUB_OUTPUT
+            echo "⚠️  SonarQube credentials not configured - skipping metrics"
             exit 0
           fi
 
-          echo "✓ SonarQube Host: $SONAR_HOST_URL"
-          echo "✓ SonarQube Token: ${SONAR_TOKEN:0:8}..."
-          
-          # Function to send timing metric to Datadog
-          send_timing() {
-            local metric=$1
-            local duration=$2
-            local tags=$3
-            if command -v nc &> /dev/null; then
-              echo "${metric}:${duration}|ms|${tags}" | nc -u -w1 127.0.0.1 8125 2>/dev/null || true
-              echo "📊 Sent metric: ${metric}=${duration}ms"
-            fi
-          }
-          
-          echo "🔍 Starting SonarQube analysis..."
-          TOTAL_START=$(date +%s)
-          
-          # Phase 1: Preparation
-          echo "::group::📋 Phase 1: Project Preparation"
-          PREP_START=$(date +%s)
-          
-          FILES=$(find . -name "*.py" -not -path "./venv/*" -not -path "./.git/*" | wc -l)
-          LINES=$(find . -name "*.py" -not -path "./venv/*" -not -path "./.git/*" -exec wc -l {} + | tail -1 | awk '{print $1}' || echo "0")
-          echo "Found $FILES Python files with $LINES lines"
-          
-          PREP_END=$(date +%s)
-          PREP_DURATION=$((PREP_END - PREP_START))
-          send_timing "sonarqube.phase.preparation" "$((PREP_DURATION * 1000))" "#project:demo-fastapi"
-          echo "::endgroup::"
-          
-          # Phase 2: Code Analysis
-          echo "::group::🔍 Phase 2: Code Analysis"
-          SCAN_START=$(date +%s)
-          
-          # Run SonarQube scan with proper source configuration
-          # Using sources=. to scan entire project directory with exclusions
-          echo "Running SonarQube scanner..."
-          echo "Working directory: $(pwd)"
-          echo ""
-          echo "📁 Project structure:"
-          ls -la | head -15
-          echo ""
-          echo "🐍 Python files to analyze:"
-          find . -name "*.py" -not -path "./venv/*" -not -path "./.git/*" -not -path "./test-results/*" | head -20
-          echo ""
-          echo "🧪 Test files:"
-          find tests -name "*.py" 2>/dev/null | head -10 || echo "No tests directory found"
-          echo ""
-
-          docker run --rm \
-            -e SONAR_HOST_URL="$SONAR_HOST_URL" \
-            -e SONAR_TOKEN="$SONAR_TOKEN" \
-            -v "$(pwd):/usr/src" \
-            sonarsource/sonar-scanner-cli \
-            -Dsonar.projectKey=quickstark_demo-fastapi_6ba235ba-ff96-459d-8607-919121b2ad98 \
-            -Dsonar.sources=. \
-            -Dsonar.tests=tests \
-            -Dsonar.test.inclusions=tests/**/*.py,**/*_test.py,**/test_*.py \
-            -Dsonar.exclusions=**/__pycache__/**,**/*.pyc,venv/**,.git/**,test-results/** \
-            -Dsonar.language=py \
-            -Dsonar.python.version=3.9,3.10,3.11,3.12 \
-            -Dsonar.sourceEncoding=UTF-8 \
-            -Dsonar.scanner.skipJreProvisioning=true \
-            -Dsonar.scanner.skipSystemTruststore=true \
-            -Dsonar.verbose=true || {
-              echo "⚠️  SonarQube scan failed - continuing deployment"
-              exit 0
-            }
-          
-          SCAN_END=$(date +%s)
-          SCAN_DURATION=$((SCAN_END - SCAN_START))
-          send_timing "sonarqube.phase.analysis" "$((SCAN_DURATION * 1000))" "#project:demo-fastapi"
-          echo "Analysis took ${SCAN_DURATION} seconds"
-          echo "::endgroup::"
-          
-          # Phase 3: Metrics Collection
-          echo "::group::📊 Phase 3: Metrics Collection"
-          METRICS_START=$(date +%s)
+          echo "📊 Collecting SonarQube Metrics for Datadog"
           sleep 3  # Wait for processing
           
           PROJECT="quickstark_demo-fastapi_6ba235ba-ff96-459d-8607-919121b2ad98"
@@ -189,50 +119,27 @@ jobs:
           VULNS=$(echo "$METRICS" | jq -r '.component.measures[] | select(.metric=="vulnerabilities") | .value // "0"' 2>/dev/null || echo "0")
           SMELLS=$(echo "$METRICS" | jq -r '.component.measures[] | select(.metric=="code_smells") | .value // "0"' 2>/dev/null || echo "0")
           COVERAGE=$(echo "$METRICS" | jq -r '.component.measures[] | select(.metric=="coverage") | .value // "0"' 2>/dev/null || echo "0")
-          
-          METRICS_END=$(date +%s)
-          METRICS_DURATION=$((METRICS_END - METRICS_START))
-          send_timing "sonarqube.phase.metrics" "$((METRICS_DURATION * 1000))" "#project:demo-fastapi"
-          
-          # Send quality metrics
+
+          # Send quality metrics to Datadog
           if command -v nc &> /dev/null; then
             echo "sonarqube.bugs:$BUGS|g|#project:demo-fastapi,branch:${{ github.ref_name }}" | nc -u -w1 127.0.0.1 8125 2>/dev/null || true
             echo "sonarqube.vulnerabilities:$VULNS|g|#project:demo-fastapi,branch:${{ github.ref_name }}" | nc -u -w1 127.0.0.1 8125 2>/dev/null || true
             echo "sonarqube.code_smells:$SMELLS|g|#project:demo-fastapi,branch:${{ github.ref_name }}" | nc -u -w1 127.0.0.1 8125 2>/dev/null || true
             echo "sonarqube.coverage:$COVERAGE|g|#project:demo-fastapi,branch:${{ github.ref_name }}" | nc -u -w1 127.0.0.1 8125 2>/dev/null || true
           fi
-          
-          echo "Bugs: $BUGS, Vulnerabilities: $VULNS, Code Smells: $SMELLS, Coverage: $COVERAGE%"
-          echo "::endgroup::"
-          
-          # Phase 4: Quality Gate
-          echo "::group::✅ Phase 4: Quality Gate Check"
-          QG_START=$(date +%s)
-          
+
+          # Quality Gate Status
           QG_STATUS=$(curl -s -u "$SONAR_TOKEN:" \
             "$SONAR_HOST_URL/api/qualitygates/project_status?projectKey=${PROJECT}" \
             | jq -r '.projectStatus.status' 2>/dev/null) || QG_STATUS="UNKNOWN"
-          
-          QG_END=$(date +%s)
-          QG_DURATION=$((QG_END - QG_START))
-          send_timing "sonarqube.phase.quality_gate" "$((QG_DURATION * 1000))" "#project:demo-fastapi,status:$QG_STATUS"
-          
-          if [ "$QG_STATUS" = "OK" ]; then
-            echo "✅ Quality Gate: PASSED"
-          elif [ "$QG_STATUS" = "ERROR" ]; then
-            echo "❌ Quality Gate: FAILED (continuing anyway)"
-          else
-            echo "⚠️  Quality Gate: $QG_STATUS"
-          fi
-          echo "::endgroup::"
-          
-          # Total timing
-          TOTAL_END=$(date +%s)
-          TOTAL_DURATION=$((TOTAL_END - TOTAL_START))
-          send_timing "sonarqube.total" "$((TOTAL_DURATION * 1000))" "#project:demo-fastapi"
 
-          echo "::notice title=SonarQube Complete::Analysis completed in ${TOTAL_DURATION} seconds (Bugs: $BUGS, Vulnerabilities: $VULNS, Coverage: $COVERAGE%)"
-          echo "sonarqube_completed=true" >> $GITHUB_OUTPUT
+          # Display results
+          echo "📊 SonarQube Results:"
+          echo "  Bugs: $BUGS"
+          echo "  Vulnerabilities: $VULNS"
+          echo "  Code Smells: $SMELLS"
+          echo "  Coverage: $COVERAGE%"
+          echo "  Quality Gate: $QG_STATUS"
       
       # ===== System Information =====
       - name: System Information
