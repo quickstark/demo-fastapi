@@ -162,6 +162,8 @@ jobs:
             -Dsonar.language=py \
             -Dsonar.python.version=3.9,3.10,3.11,3.12 \
             -Dsonar.sourceEncoding=UTF-8 \
+            -Dsonar.scanner.skipJreProvisioning=true \
+            -Dsonar.scanner.skipSystemTruststore=true \
             -Dsonar.verbose=true || {
               echo "⚠️  SonarQube scan failed - continuing deployment"
               exit 0
