@@ -86,9 +86,12 @@ jobs:
       - name: Read VERSION
         id: version
         run: |
-          VERSION=$(cat VERSION | tr -d '[:space:]')
+          BASE_VERSION=$(cat VERSION | tr -d '[:space:]')
+          SHORT_SHA="${{ github.sha }}"
+          SHORT_SHA="${SHORT_SHA:0:7}"
+          VERSION="${BASE_VERSION}-${SHORT_SHA}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "📦 Deployment Version: $VERSION"
+          echo "📦 Deployment Version: $VERSION (base: $BASE_VERSION, commit: $SHORT_SHA)"
       
       # ===== SonarQube Analysis =====
       # Install dependencies for SonarQube (if not present)
