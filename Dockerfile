@@ -39,7 +39,9 @@ ENV PYTHONPATH=/app \
     DD_LLMOBS_ML_APP=youtube-summarizer \
     DD_LLMOBS_EVALUATORS="ragas_faithfulness,ragas_context_precision,ragas_answer_relevancy" \
     DD_GIT_REPOSITORY_URL=${DD_GIT_REPOSITORY_URL} \
-    DD_GIT_COMMIT_SHA=${DD_GIT_COMMIT_SHA}
+    DD_GIT_COMMIT_SHA=${DD_GIT_COMMIT_SHA} \
+    DD_TRACE_HTTP_RESOURCE_PATTERNS_ENABLED=true \
+    DD_TRACE_HTTP_RESOURCE_PATTERN="/delete_image/*"
 
 # Use python -m to run hypercorn
 CMD ["python", "-m", "hypercorn", "main:app", "--bind", "0.0.0.0:8080"]
