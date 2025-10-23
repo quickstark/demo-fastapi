@@ -1,4 +1,4 @@
-name: Build and Deploy (GitHub-Hosted)
+name: Build and Deploy Images API
 on:
   # Disabled automatic trigger - use self-hosted runner workflow instead
   # push:
