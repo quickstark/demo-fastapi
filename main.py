@@ -53,95 +53,93 @@ if 'DD_VERSION' not in os.environ:
     logger.info(f"Set DD_VERSION environment variable to: {APP_VERSION}")
 
 # Define CustomError class for application-specific exceptions
+# Note: This is defined before provider initialization, so it uses a deferred approach
 class CustomError(Exception):
     """Custom exception class for application-specific errors."""
-    
+
     def __init__(self, message, error_type=None, tags=None):
         super().__init__(message)
         self.message = message
         self.error_type = error_type or "application_error"
         self.tags = tags or []
-        
-        # Get Datadog service information from environment variables
-        dd_service = os.getenv('DD_SERVICE', 'fastapi-app')
-        dd_env = os.getenv('DD_ENV', 'dev')
-        dd_version = os.getenv('DD_VERSION', '1.0')
-        
-        # Record the error in Datadog if tracer is available
-        try:
-            # Ensure tracer is imported before use if needed here
-            from ddtrace import tracer, ERROR_MSG, ERROR_TYPE, ERROR_STACK
-            span = tracer.current_span()
-            if span:
-                span.error = 1
-                span.set_tag(ERROR_MSG, message)
-                span.set_tag(ERROR_TYPE, self.error_type)
-                span.set_tag(ERROR_STACK, traceback.format_exc())
-                
-                # Add service information tags
-                span.set_tag("service", dd_service)
-                span.set_tag("env", dd_env)
-                span.set_tag("version", dd_version)
-                
-                # Add any custom tags
-                for tag in self.tags:
-                    if isinstance(tag, tuple) and len(tag) == 2:
-                        span.set_tag(tag[0], tag[1])
-                    elif isinstance(tag, str):
-                        span.set_tag(tag, True)
-                
-                logger.error(f"CustomError Recorded: {message}") # Changed log message slightly
-        except Exception as e:
-            logger.error(f"Failed to record CustomError in Datadog: {e}")
 
-# Import all modules that need to be instrumented BEFORE patching
+        # Record the error using the observability provider
+        # Provider will be initialized later, so we use a deferred approach
+        try:
+            # Import at runtime to avoid circular dependency
+            from src.observability import get_provider
+
+            provider = get_provider()
+            if provider.is_enabled:
+                # Convert tags list to dict format
+                tags_dict = {}
+                if self.tags:
+                    for tag in self.tags:
+                        if isinstance(tag, tuple) and len(tag) == 2:
+                            tags_dict[tag[0]] = tag[1]
+                        elif isinstance(tag, str):
+                            tags_dict[tag] = True
+
+                # Record error with provider
+                provider.record_error(
+                    exception=self,
+                    error_type=self.error_type,
+                    tags=tags_dict
+                )
+                logger.error(f"CustomError Recorded: {message}")
+            else:
+                logger.error(f"CustomError (observability disabled): {message}")
+        except Exception as e:
+            # Fallback to basic logging if provider fails
+            logger.error(f"Failed to record CustomError: {e}")
+            logger.error(f"Original error: {message}")
+
+# Import all modules that need to be instrumented BEFORE provider initialization
 import httpx
 import boto3
 import pymongo
 import psycopg
 import openai  # Important for LLM observability
 
-# Now initialize Datadog tracing
-from ddtrace import patch_all, tracer
-# ERROR_MSG, ERROR_TYPE, ERROR_STACK moved to CustomError
-from ddtrace.runtime import RuntimeMetrics
+# Initialize observability provider (replaces direct Datadog initialization)
+from src.observability import get_provider
 
-# Use verbose logging to see what's being patched
-logger.info("Initializing Datadog tracing...")
-patch_all(logging=True, httpx=True, pymongo=True, psycopg=True, boto=True, openai=True, fastapi=True)
-logger.info("Datadog tracing initialized")
+logger.info("Initializing observability provider...")
+observability_provider = get_provider()
+observability_provider.initialize()
+logger.info(f"Observability provider initialized: {observability_provider.name} (enabled: {observability_provider.is_enabled})")
 
-# Conditionally initialize LLM Observability based on environment variable
-llmobs_enabled = (os.getenv('DD_LLMOBS_ENABLED', 'true').lower() == 'true' and 
-                  os.getenv('DD_LLMOBS_EVALUATORS_ENABLED', 'true').lower() == 'true')
-if llmobs_enabled:
-    try:
-        from ddtrace.llmobs import LLMObs
-        LLMObs.enable()
-        logger.info("LLM Observability enabled")
-    except Exception as e:
-        logger.warning(f"Failed to enable LLM Observability: {e}")
-        logger.info("Continuing without LLM Observability")
-else:
-    logger.info("LLM Observability disabled via environment variables")
+# For backward compatibility, create tracer reference if using Datadog
+# This allows existing @tracer.wrap() decorators to continue working
+try:
+    if observability_provider.name == "datadog" and observability_provider.is_enabled:
+        from ddtrace import tracer
+        logger.info("Datadog tracer reference available for backward compatibility")
+    else:
+        # Create a mock tracer object for non-Datadog providers
+        class MockTracer:
+            @staticmethod
+            def wrap(**kwargs):
+                def decorator(func):
+                    return func
+                return decorator
 
-# Enable runtime metrics
-RuntimeMetrics.enable()
-logger.info("Runtime metrics enabled")
+            @staticmethod
+            def trace(name, **kwargs):
+                from contextlib import contextmanager
+                @contextmanager
+                def noop_context():
+                    yield None
+                return noop_context()
 
-# Enable Datadog profiling (conditional based on environment variable)
-profiler_enabled = os.getenv('DD_PROFILING_ENABLED', 'true').lower() == 'true'
-if profiler_enabled:
-    try:
-        from ddtrace.profiling import Profiler
-        prof = Profiler()
-        prof.start()
-        logger.info("Datadog profiler enabled and started")
-    except Exception as e:
-        logger.warning(f"Failed to enable Datadog profiler: {e}")
-        logger.info("Continuing without profiler")
-else:
-    logger.info("Datadog profiler disabled via environment variables")
+            @staticmethod
+            def current_span():
+                return None
+
+        tracer = MockTracer()
+        logger.info(f"Using mock tracer for {observability_provider.name} provider")
+except Exception as e:
+    logger.warning(f"Failed to set up tracer compatibility layer: {e}")
 
 # Now initialize FastAPI (after patching)
 from fastapi import FastAPI, UploadFile
@@ -601,7 +599,9 @@ async def health_check():
         "status": "healthy",
         "service": os.getenv('DD_SERVICE', 'fastapi-app'),
         "version": APP_VERSION,
-        "environment": os.getenv('DD_ENV', 'dev')
+        "environment": os.getenv('DD_ENV', 'dev'),
+        "observability_provider": observability_provider.name,
+        "observability_enabled": observability_provider.is_enabled
     }
 
 

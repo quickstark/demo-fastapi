@@ -23,9 +23,15 @@ COPY . .
 # Consolidate all ENV variables into a single layer
 ENV PYTHONPATH=/app \
     PORT=8080 \
+    # Observability Provider Selection
+    OBSERVABILITY_PROVIDER=datadog \
+    DATADOG_ENABLED=true \
+    SENTRY_ENABLED=false \
+    # Application Configuration (shared)
     DD_ENV="dev" \
     DD_SERVICE="fastapi-app" \
     DD_VERSION="1.0" \
+    # Datadog Configuration
     DD_LOGS_INJECTION=true \
     DD_TRACE_SAMPLE_RATE=1 \
     DD_PROFILING_ENABLED=true \
@@ -42,7 +48,16 @@ ENV PYTHONPATH=/app \
     DD_GIT_COMMIT_SHA=${DD_GIT_COMMIT_SHA} \
     DD_TRACE_HTTP_RESOURCE_PATTERNS_ENABLED=true \
     DD_TRACE_HTTP_RESOURCE_PATTERN="/delete_image/*" \
-    DD_CODE_ORIGIN_FOR_SPANS_ENABLED=true
+    DD_CODE_ORIGIN_FOR_SPANS_ENABLED=true \
+    # Sentry Configuration (defaults, override at runtime)
+    SENTRY_DSN="" \
+    SENTRY_ENVIRONMENT="dev" \
+    SENTRY_RELEASE="1.0" \
+    SENTRY_TRACES_SAMPLE_RATE="1.0" \
+    SENTRY_PROFILES_SAMPLE_RATE="0.0" \
+    SENTRY_SEND_DEFAULT_PII="false" \
+    SENTRY_DEBUG="false" \
+    SENTRY_ATTACH_STACKTRACE="true"
 
 # Use python -m to run hypercorn
 CMD ["python", "-m", "hypercorn", "main:app", "--bind", "0.0.0.0:8080"]
