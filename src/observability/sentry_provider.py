@@ -36,11 +36,6 @@ class SentryProvider(ObservabilityProvider):
         Returns:
             True if Sentry is properly configured, False otherwise
         """
-        # Check if Sentry is explicitly disabled
-        if os.getenv('SENTRY_ENABLED', 'true').lower() == 'false':
-            logger.info("Sentry explicitly disabled via SENTRY_ENABLED=false")
-            return False
-
         # Check for required DSN
         sentry_dsn = os.getenv('SENTRY_DSN', '').strip()
         if not sentry_dsn:

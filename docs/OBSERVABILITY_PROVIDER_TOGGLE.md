@@ -27,9 +27,7 @@ src/observability/
 
 | Variable | Values | Default | Description |
 |----------|--------|---------|-------------|
-| `OBSERVABILITY_PROVIDER` | `datadog`, `sentry`, `disabled` | `datadog` | Primary provider selection |
-| `DATADOG_ENABLED` | `true`, `false` | `true` | Explicit Datadog toggle |
-| `SENTRY_ENABLED` | `true`, `false` | `false` | Explicit Sentry toggle |
+| `OBSERVABILITY_PROVIDER` | `datadog`, `sentry`, `disabled` | `datadog` | Primary provider selection and toggle |
 
 ### Datadog Configuration (existing)
 
@@ -60,7 +58,6 @@ All existing Datadog environment variables remain unchanged:
 **Local Development (.env)**:
 ```bash
 OBSERVABILITY_PROVIDER=datadog
-DATADOG_ENABLED=true
 DD_AGENT_HOST=192.168.1.100
 DD_API_KEY=your-datadog-api-key
 DD_APP_KEY=your-datadog-app-key
@@ -81,7 +78,6 @@ curl http://localhost:9000/health
 **Update .env**:
 ```bash
 OBSERVABILITY_PROVIDER=sentry
-SENTRY_ENABLED=true
 SENTRY_DSN=https://[key]@[org].ingest.sentry.io/[project]
 SENTRY_ENVIRONMENT=production
 SENTRY_TRACES_SAMPLE_RATE=1.0
@@ -157,8 +153,6 @@ SENTRY_DSN=your-sentry-dsn
 
 **Provider Selection** (new):
 - `OBSERVABILITY_PROVIDER` (optional, defaults to `datadog`)
-- `DATADOG_ENABLED` (optional, defaults to `true`)
-- `SENTRY_ENABLED` (optional, defaults to `false`)
 
 ### Workflow Changes
 

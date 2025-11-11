@@ -38,11 +38,6 @@ class DatadogProvider(ObservabilityProvider):
         Returns:
             True if Datadog is properly configured, False otherwise
         """
-        # Check if Datadog is explicitly disabled
-        if os.getenv('DATADOG_ENABLED', 'true').lower() == 'false':
-            logger.info("Datadog explicitly disabled via DATADOG_ENABLED=false")
-            return False
-
         # Check for required configuration (API keys for events are optional)
         dd_agent_host = os.getenv('DD_AGENT_HOST')
         if not dd_agent_host:

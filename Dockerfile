@@ -25,8 +25,6 @@ ENV PYTHONPATH=/app \
     PORT=8080 \
     # Observability Provider Selection
     OBSERVABILITY_PROVIDER=datadog \
-    DATADOG_ENABLED=true \
-    SENTRY_ENABLED=false \
     # Application Configuration (shared)
     DD_ENV="dev" \
     DD_SERVICE="fastapi-app" \

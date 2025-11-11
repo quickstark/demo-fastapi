@@ -110,8 +110,6 @@ docker run -d --name images-api \
 | Variable | Values | Default |
 |----------|--------|---------|
 | `OBSERVABILITY_PROVIDER` | `datadog`, `sentry`, `disabled` | `datadog` |
-| `DATADOG_ENABLED` | `true`, `false` | `true` |
-| `SENTRY_ENABLED` | `true`, `false` | `false` |
 
 ### Sentry Essentials
 | Variable | Required | Example |

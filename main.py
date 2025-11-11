@@ -354,139 +354,127 @@ async def add_photo(file: UploadFile, backend: str = "mongo"):
     try:
         if amazon_moderation(amzmoderation):
             error_message = f"{file.filename} may contain questionable content. Let's keep it family friendly. ;-)"
-            # Create a list of tags for the error, including moderation labels
             error_tags = [
                 ("error.source", "rekognition"),
                 ("error.type", "content_moderation"),
                 ("error.moderation_labels", ", ".join(amzmoderation)),
                 ("error.filename", file.filename)
             ]
-            
-            # Send explicit event to Datadog using our new function
+
+            detection_text = f"Image file: {file.filename}\\nDetected labels: {', '.join(amzmoderation)}"
+            additional_info = f"Content moderation triggered for image: {', '.join(amzmoderation)}"
+
             try:
-                # Call the bug_detection_event function with moderation type
-                await bug_detection_event(
+                success, target = await _dispatch_detection_event(
+                    detection_type="moderation",
                     filename=file.filename,
                     labels=amzmoderation,
-                    detection_type="moderation",
-                    additional_info=f"Content moderation triggered for image: {', '.join(amzmoderation)}"
+                    title=f"Content Moderation Triggered in Image: {file.filename}",
+                    text=detection_text,
+                    alert_type="warning",
+                    additional_info=additional_info,
+                    tag_prefix="moderation",
+                    app_event_message=f"Content moderation triggered for image: {file.filename}. Content: {', '.join(amzmoderation)}"
                 )
-                logger.info(f"Content moderation event sent to Datadog for {file.filename}")
-                
-                # Also send to Datadog's warning events using app_event
-                try:
-                    await app_event(
-                        event_type="warning",
-                        message=f"Content moderation triggered for image: {file.filename}. Content: {', '.join(amzmoderation)}"
-                    )
-                    logger.info(f"Moderation warning event sent to Datadog via app_event for {file.filename}")
-                except Exception as app_event_error:
-                    logger.error(f"Failed to send moderation warning via app_event to Datadog: {app_event_error}")
-                
+                if success:
+                    logger.info(f"Content moderation event sent to {target} for {file.filename}")
+                else:
+                    logger.info(f"Content moderation event skipped (provider: {target}) for {file.filename}")
             except Exception as event_error:
-                logger.error(f"Failed to send content moderation event to Datadog: {event_error}")
-            
+                logger.error(f"Failed to send content moderation event: {event_error}")
+
             moderation_triggered = True
             response_data["warning"] = error_message
             response_data["type"] = "moderation_triggered"
             response_data["moderation_labels"] = amzmoderation
     except Exception as e:
-        # Log the error to Datadog but don't return an error response
         logger.error(f"Content moderation check error: {str(e)}")
 
     # Check if the image contained the word "error" and issue an error
     try:
         if amazon_error_text(amztext):
             error_message = f"Image Text Error - {' '.join(amztext)}"
-            # Create a list of tags for the error, including all detected text
             error_tags = [
                 ("error.source", "rekognition"),
                 ("error.type", "error_text_detection"),
                 ("error.text", ", ".join(amztext)),
                 ("error.filename", file.filename)
             ]
-            
-            # Send explicit event to Datadog using our new function
+
+            detection_text = f"Image file: {file.filename}\\nDetected text: {', '.join(amztext)}"
+            additional_info = f"Error text detected in image: {', '.join(amztext)}"
+
             try:
-                # Call the bug_detection_event function with error_text type
-                await bug_detection_event(
+                success, target = await _dispatch_detection_event(
+                    detection_type="error_text",
                     filename=file.filename,
                     labels=amztext,
-                    detection_type="error_text",
-                    additional_info=f"Error text detected in image: {', '.join(amztext)}"
+                    title=f"Error Text Detected in Image: {file.filename}",
+                    text=detection_text,
+                    alert_type="error",
+                    additional_info=additional_info,
+                    tag_prefix="error_text",
+                    app_event_message=f"Error text detected in image: {file.filename}. Text: {', '.join(amztext)}"
                 )
-                logger.info(f"Error text detection event sent to Datadog for {file.filename}")
-                
-                # Also send to Datadog's error events using app_event
-                try:
-                    await app_event(
-                        event_type="error",
-                        message=f"Error text detected in image: {file.filename}. Text: {', '.join(amztext)}"
-                    )
-                    logger.info(f"Error text event sent to Datadog via app_event for {file.filename}")
-                except Exception as app_event_error:
-                    logger.error(f"Failed to send error text via app_event to Datadog: {app_event_error}")
-                
+                if success:
+                    logger.info(f"Error text detection event sent to {target} for {file.filename}")
+                else:
+                    logger.info(f"Error text detection event skipped (provider: {target}) for {file.filename}")
             except Exception as event_error:
-                logger.error(f"Failed to send error text detection event to Datadog: {event_error}")
-            
+                logger.error(f"Failed to send error text detection event: {event_error}")
+
             error_text_triggered = True
             response_data["warning"] = error_message
             response_data["type"] = "error_text_detected"
             response_data["text"] = amztext
     except Exception as e:
-        # Log the error to Datadog but don't return an error response
         logger.error(f"Text error detection check error: {str(e)}")
 
     # Check if the image labels contained the word "bug" or "insect" and issue an error
     try:
         if amazon_error_label(amzlabels):
             error_message = f"Image Label Error - {' '.join(amzlabels)}"
-            # Create a list of tags for the error, including all the labels
             error_tags = [
                 ("error.source", "rekognition"),
                 ("error.type", "bug_detection"),
                 ("error.labels", ", ".join(amzlabels)),
                 ("error.filename", file.filename)
             ]
-            
-            # Send explicit event to Datadog using our new function
+
+            detection_text = f"Image file: {file.filename}\\nDetected labels: {', '.join(amzlabels)}"
+            additional_info = f"Bug or insect detected in image: {', '.join(amzlabels)}"
+
             try:
-                # Call the bug_detection_event function
-                await bug_detection_event(
+                success, target = await _dispatch_detection_event(
+                    detection_type="bug",
                     filename=file.filename,
                     labels=amzlabels,
-                    detection_type="bug",
-                    additional_info=f"Bug or insect detected in image: {', '.join(amzlabels)}"
+                    title=f"Bug Detected in Image: {file.filename}",
+                    text=detection_text,
+                    alert_type="error",
+                    additional_info=additional_info,
+                    tag_prefix="bug",
+                    app_event_message=f"Bug detected in image: {file.filename}. Labels: {', '.join(amzlabels)}"
                 )
-                logger.info(f"Bug detection event sent to Datadog for {file.filename}")
-                
-                # Also send to Datadog's error events using app_event
-                try:
-                    await app_event(
-                        event_type="error",
-                        message=f"Bug detected in image: {file.filename}. Labels: {', '.join(amzlabels)}"
-                    )
-                    logger.info(f"Bug error event sent to Datadog via app_event for {file.filename}")
-                except Exception as app_event_error:
-                    logger.error(f"Failed to send bug error via app_event to Datadog: {app_event_error}")
-                
-                # For demo purposes: generate an unhandled error with stack trace
+                if success:
+                    logger.info(f"Bug detection event sent to {target} for {file.filename}")
+                else:
+                    logger.info(f"Bug detection event skipped (provider: {target}) for {file.filename}")
+            except Exception as event_error:
+                logger.error(f"Failed to send bug detection event: {event_error}")
+            finally:
                 generate_unhandled_error(
                     f"Bug detected in image: {file.filename}",
-                    amzlabels
+                    labels=amzlabels,
+                    filename=file.filename
                 )
                 logger.info(f"Generated demo unhandled error for {file.filename}")
-                
-            except Exception as event_error:
-                logger.error(f"Failed to send bug detection event to Datadog: {event_error}")
-            
+
             bug_detected_triggered = True
             response_data["warning"] = error_message
             response_data["type"] = "bug_detected"
             response_data["labels"] = amzlabels
     except Exception as e:
-        # Log the error to Datadog but don't return an error response
         logger.error(f"Bug detection check error: {str(e)}")
 
     # If any issues were detected, add a flag to the response
@@ -663,55 +651,176 @@ class DemoBugDetectionError(Exception):
     """Custom exception for demo purposes to show unhandled bugs."""
     pass
 
-# Define a function to deliberately generate an unhandled error for demo purposes
-def generate_unhandled_error(error_message, labels=None):
+def generate_unhandled_error(error_message, labels=None, filename=None):
     """
-    Generate an unhandled error for demonstration purposes.
-    This will create a stack trace in Datadog but won't crash the application.
-    
+    Generate a synthetic error so the selected observability provider records it.
+
     Args:
-        error_message: The error message to include
-        labels: Additional context for the error
+        error_message: Message to include with the generated error
+        labels: Optional list of labels/text detected in the image
+        filename: Optional filename for additional context
     """
-    # Get Datadog service information from environment variables
-    dd_service = os.getenv('DD_SERVICE', 'fastapi-app')
-    dd_env = os.getenv('DD_ENV', 'dev')
-    dd_version = os.getenv('DD_VERSION', '1.0')
-    
-    # Create a child span that will contain the error
-    with tracer.trace("demo.unhandled_error") as span:
-        # Add service information
-        span.set_tag("service", dd_service)
-        span.set_tag("env", dd_env)
-        span.set_tag("version", dd_version)
-        
-        # Add error information
-        span.set_tag("error.type", "demo_unhandled_error")
-        span.set_tag("error.message", error_message)
-        span.set_tag("error.demo", "true")
-        span.set_tag("error.category", "bug_detection")
-        
-        if labels:
-            span.set_tag("error.labels", str(labels))
-        
-        try:
-            # Create a nested stack to make the trace more interesting
+    service = os.getenv('DD_SERVICE', 'fastapi-app')
+    env_name = os.getenv('DD_ENV', 'dev')
+    version = os.getenv('DD_VERSION', '1.0')
+
+    tags = {
+        "service": service,
+        "env": env_name,
+        "version": version,
+        "error.type": "demo_unhandled_error",
+        "error.message": error_message,
+        "error.demo": "true",
+        "error.category": "bug_detection",
+    }
+    if labels:
+        tags["error.labels"] = ", ".join(str(label) for label in labels)
+    if filename:
+        tags["error.filename"] = filename
+
+    context = {
+        "labels": labels or [],
+        "filename": filename,
+    }
+
+    try:
+        with observability_provider.trace_context("demo.unhandled_error", op="bug_detection") as span:
+            _set_span_tags(span, tags)
+
             def nested_function_1():
                 def nested_function_2():
-                    # Deliberately raise our custom exception
                     raise DemoBugDetectionError(f"DEMO UNHANDLED ERROR: {error_message}")
                 nested_function_2()
-            nested_function_1()
-        except Exception as e:
-            # Set span as error but don't handle the exception
-            span.set_traceback()
-            # Re-raise in the span context so it's captured but don't actually bubble it up
+
             try:
-                raise e
+                nested_function_1()
+            except Exception as exc:
+                _mark_span_traceback(span)
+                try:
+                    observability_provider.record_error(
+                        exception=exc,
+                        error_type="demo_unhandled_error",
+                        tags=tags,
+                        context=context
+                    )
+                except Exception as record_error_exc:
+                    logger.error(f"Failed to record demo unhandled error: {record_error_exc}")
+    except Exception as outer_error:
+        logger.error(f"Failed to generate demo unhandled error: {outer_error}")
+
+
+async def _dispatch_detection_event(
+    *,
+    detection_type,
+    filename,
+    labels,
+    title,
+    text,
+    alert_type,
+    additional_info=None,
+    tag_prefix=None,
+    app_event_message=None,
+):
+    """Send detection events to the active observability provider."""
+    label_values = labels or []
+    combined_text = text
+    if additional_info and additional_info not in text:
+        combined_text = f"{text}\n\n{additional_info}"
+
+    provider_name = observability_provider.name
+
+    if provider_name == "datadog":
+        await bug_detection_event(
+            filename=filename,
+            labels=label_values,
+            detection_type=detection_type,
+            additional_info=additional_info
+        )
+
+        event_type = "error" if alert_type == "error" else "warning"
+        message = app_event_message or combined_text
+        try:
+            await app_event(event_type=event_type, message=message)
+        except Exception as app_event_error:
+            logger.error(f"Failed to send {detection_type} via app_event to Datadog: {app_event_error}")
+
+        return True, provider_name
+
+    if not observability_provider.is_enabled:
+        return False, provider_name
+
+    tags = _build_detection_tags(
+        filename=filename,
+        labels=label_values,
+        detection_type=detection_type,
+        tag_prefix=tag_prefix
+    )
+
+    observability_provider.record_event(
+        title=title,
+        text=combined_text,
+        alert_type=alert_type,
+        tags=tags
+    )
+
+    return True, provider_name
+
+
+def _build_detection_tags(*, filename, labels, detection_type, tag_prefix=None):
+    service = os.getenv('DD_SERVICE', 'fastapi-app')
+    env_name = os.getenv('DD_ENV', 'dev')
+    version = os.getenv('DD_VERSION', '1.0')
+
+    tags = [
+        "app:fastapi",
+        f"event_type:{detection_type}",
+        f"filename:{filename}",
+        "source:amazon_rekognition",
+        f"service:{service}",
+        f"env:{env_name}",
+        f"version:{version}"
+    ]
+
+    prefix = tag_prefix or detection_type
+    for label in labels:
+        safe_label = str(label).lower().replace(' ', '_')
+        tags.append(f"{prefix}_label:{safe_label}")
+
+    return tags
+
+
+def _set_span_tags(span, tags):
+    if not span or not tags:
+        return
+
+    setter = getattr(span, "set_tag", None)
+    if callable(setter):
+        for key, value in tags.items():
+            try:
+                setter(str(key), str(value))
             except Exception:
-                # Now we're outside the re-raise, Datadog has captured it as unhandled
-                # but we suppress it here so the application continues
                 pass
+        return
+
+    data_setter = getattr(span, "set_data", None)
+    if callable(data_setter):
+        for key, value in tags.items():
+            try:
+                data_setter(str(key), str(value))
+            except Exception:
+                pass
+
+
+def _mark_span_traceback(span):
+    if not span:
+        return
+
+    span_traceback = getattr(span, "set_traceback", None)
+    if callable(span_traceback):
+        try:
+            span_traceback()
+        except Exception:
+            pass
 
 # Add a /save-youtube-to-notion endpoint that's just a shortcut for the summarize-youtube endpoint with save_to_notion=True
 @app.post("/api/v1/save-youtube-to-notion", tags=["Notion"])

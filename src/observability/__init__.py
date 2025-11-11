@@ -20,8 +20,6 @@ Usage:
 
 Environment Variables:
     OBSERVABILITY_PROVIDER: datadog | sentry | disabled (default: datadog)
-    DATADOG_ENABLED: true | false (default: true)
-    SENTRY_ENABLED: true | false (default: false)
 """
 
 import os
@@ -51,8 +49,6 @@ def get_provider() -> ObservabilityProvider:
 
     Environment Variables:
         OBSERVABILITY_PROVIDER: Which provider to use (datadog|sentry|disabled)
-        DATADOG_ENABLED: Explicit toggle for Datadog (default: true)
-        SENTRY_ENABLED: Explicit toggle for Sentry (default: false)
 
     Examples:
         # Using Datadog (default)
@@ -81,20 +77,10 @@ def get_provider() -> ObservabilityProvider:
 
     # Create provider based on configuration
     if provider_name == 'datadog':
-        # Check if Datadog is explicitly disabled
-        if os.getenv('DATADOG_ENABLED', 'true').lower() == 'false':
-            logger.info("Datadog explicitly disabled, using NoopProvider")
-            _provider_instance = NoopProvider()
-        else:
-            _provider_instance = DatadogProvider()
+        _provider_instance = DatadogProvider()
 
     elif provider_name == 'sentry':
-        # Check if Sentry is explicitly disabled
-        if os.getenv('SENTRY_ENABLED', 'true').lower() == 'false':
-            logger.info("Sentry explicitly disabled, using NoopProvider")
-            _provider_instance = NoopProvider()
-        else:
-            _provider_instance = SentryProvider()
+        _provider_instance = SentryProvider()
 
     elif provider_name in ('disabled', 'none', 'noop'):
         logger.info("Observability explicitly disabled")
