@@ -11,6 +11,7 @@ A production-ready FastAPI application that combines intelligent image processin
 - OpenAI API Key (for AI features)
 - Datadog Account (optional, for monitoring)
 - Notion Account (optional, for YouTube summaries storage)
+- Sentry DSN and associated parameters (options, for testing)
 
 ## 🚀 Features
 
