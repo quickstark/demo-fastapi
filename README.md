@@ -12,6 +12,7 @@ A production-ready FastAPI application that combines intelligent image processin
 - Datadog Account (optional, for monitoring)
 - Notion Account (optional, for YouTube summaries storage)
 - Sentry DSN and associated parameters (options, for testing)
+- Remember to toggle the observability provider
 
 ## 🚀 Features
 
