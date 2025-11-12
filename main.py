@@ -103,6 +103,11 @@ import openai  # Important for LLM observability
 
 # Initialize observability provider (replaces direct Datadog initialization)
 from src.observability import get_provider
+from src.observability.sentry_logging import (
+    log_image_upload_start, log_image_upload_success, log_image_upload_error,
+    log_image_deletion, log_content_moderation, log_rekognition_analysis,
+    log_database_operation, log_s3_operation, log_health_check
+)
 
 logger.info("Initializing observability provider...")
 observability_provider = get_provider()
@@ -255,6 +260,9 @@ async def add_photo(file: UploadFile, backend: str = "mongo"):
     """
     logger.info(f"Uploading File {file.filename} - {file.content_type}")
     
+    # Log structured event to Sentry
+    log_image_upload_start(file.filename, backend, file.content_type)
+    
     # Variables to store image data
     s3_url = None
     amzlabels = []
@@ -277,9 +285,12 @@ async def add_photo(file: UploadFile, backend: str = "mongo"):
                 error_type="s3_upload_failure",
                 tags=error_tags
             )
+        # Log successful S3 upload
+        log_s3_operation("upload", file.filename, os.getenv('AMAZON_S3_BUCKET', 'default'), True)
     except CustomError as e:
-        # Now properly log the error to Datadog
+        # Log error to observability provider
         logger.error(f"S3 upload error: {str(e)}")
+        log_image_upload_error(file.filename, backend, "s3_upload_failure", str(e))
         # Return a proper error response to the client
         return {"error": str(e), "type": "s3_upload_error", "filename": file.filename}
 
@@ -298,9 +309,12 @@ async def add_photo(file: UploadFile, backend: str = "mongo"):
                 error_type="rekognition_failure",
                 tags=error_tags
             )
+        # Log Rekognition analysis results
+        log_rekognition_analysis(file.filename, amzlabels, amztext, amzmoderation)
     except CustomError as e:
-        # Now properly log the error to Datadog
+        # Log error to observability provider
         logger.error(f"Rekognition error: {str(e)}")
+        log_image_upload_error(file.filename, backend, "rekognition_failure", str(e))
         # Return a proper error response to the client
         return {"error": str(e), "type": "rekognition_error", "filename": file.filename}
 
@@ -311,24 +325,30 @@ async def add_photo(file: UploadFile, backend: str = "mongo"):
         try:
             result = await add_image_mongo(file.filename, s3_url, amzlabels, amztext)
             logger.info(f"Successfully saved image {file.filename} to MongoDB")
+            log_database_operation("insert", "mongo", file.filename, True)
         except Exception as e:
             logger.error(f"MongoDB storage error: {str(e)}")
+            log_database_operation("insert", "mongo", file.filename, False, str(e))
             return {"error": str(e), "type": "mongodb_error", "filename": file.filename}
     elif backend == "postgres":
         # Attempt to upload the image to Postgres
         try:
             result = await add_image_postgres(file.filename, s3_url, amzlabels, amztext)
             logger.info(f"Successfully saved image {file.filename} to PostgreSQL")
+            log_database_operation("insert", "postgres", file.filename, True)
         except Exception as e:
             logger.error(f"PostgreSQL storage error: {str(e)}")
+            log_database_operation("insert", "postgres", file.filename, False, str(e))
             return {"error": str(e), "type": "postgres_error", "filename": file.filename}
     elif backend == "sqlserver":
         # Attempt to upload the image to SQL Server
         try:
             result = await add_image_sqlserver(file.filename, s3_url, amzlabels, amztext)
             logger.info(f"Successfully saved image {file.filename} to SQL Server")
+            log_database_operation("insert", "sqlserver", file.filename, True)
         except Exception as e:
             logger.error(f"SQL Server storage error: {str(e)}")
+            log_database_operation("insert", "sqlserver", file.filename, False, str(e))
             return {"error": str(e), "type": "sqlserver_error", "filename": file.filename}
     else:
         error_tags = [
@@ -353,6 +373,9 @@ async def add_photo(file: UploadFile, backend: str = "mongo"):
     # Check the image for questionable content using Amazon Rekognition
     try:
         if amazon_moderation(amzmoderation):
+            # Log content moderation trigger
+            log_content_moderation(file.filename, amzmoderation, True)
+            
             error_message = f"{file.filename} may contain questionable content. Let's keep it family friendly. ;-)"
             error_tags = [
                 ("error.source", "rekognition"),
@@ -387,6 +410,9 @@ async def add_photo(file: UploadFile, backend: str = "mongo"):
             response_data["warning"] = error_message
             response_data["type"] = "moderation_triggered"
             response_data["moderation_labels"] = amzmoderation
+        else:
+            # Log content moderation pass
+            log_content_moderation(file.filename, amzmoderation, False)
     except Exception as e:
         logger.error(f"Content moderation check error: {str(e)}")
 
@@ -480,6 +506,12 @@ async def add_photo(file: UploadFile, backend: str = "mongo"):
     # If any issues were detected, add a flag to the response
     if moderation_triggered or error_text_triggered or bug_detected_triggered:
         response_data["has_issues"] = True
+    else:
+        # Log successful upload with all details
+        log_image_upload_success(
+            file.filename, backend, s3_url,
+            len(amzlabels), len(amztext)
+        )
     
     return response_data
 
@@ -543,9 +575,11 @@ async def delete_image(id, backend: str = "mongo"):
         logger.debug(f"Image to delete: {image}")
         res = await amazon_delete_one_s3(image["name"])
         logger.debug(f"S3 deletion result: {res}")
+        log_image_deletion(id, backend, image["name"], True)
     except CustomError as e:
         error_tags = [("error.source", "s3"), ("error.type", "delete_failure"), ("error.id", id)]
         logger.error(f"S3 delete error: {str(e)}")
+        log_image_deletion(id, backend, image.get("name", "unknown"), False)
         return {"error": str(e), "type": "s3_delete_error", "id": id, "filename": image.get("name", "unknown")}
     
     return {"message": f"Image {id} successfully deleted"}
@@ -583,6 +617,9 @@ async def health_check():
     Returns:
         dict: Health status and basic application info.
     """
+    # Log health check to Sentry
+    log_health_check("healthy", observability_provider.name, observability_provider.is_enabled)
+    
     return {
         "status": "healthy",
         "service": os.getenv('DD_SERVICE', 'fastapi-app'),
@@ -590,6 +627,53 @@ async def health_check():
         "environment": os.getenv('DD_ENV', 'dev'),
         "observability_provider": observability_provider.name,
         "observability_enabled": observability_provider.is_enabled
+    }
+
+
+@app.get("/test-sentry-logs")
+async def test_sentry_logs():
+    """
+    Test endpoint to demonstrate Sentry structured logging.
+    
+    Returns:
+        dict: Confirmation that test logs were sent to Sentry.
+    """
+    from src.observability.sentry_logging import log_custom
+    
+    # Log at various levels with structured data
+    log_custom(
+        "debug",
+        "Test debug log from {endpoint}",
+        endpoint="/test-sentry-logs",
+        operation="test_logging",
+        level="debug"
+    )
+    
+    log_custom(
+        "info",
+        "Test info log: Processing {count} items",
+        count=42,
+        operation="test_logging",
+        test_type="structured_logging",
+        environment=os.getenv('DD_ENV', 'dev')
+    )
+    
+    log_custom(
+        "warning",
+        "Test warning log: Threshold {threshold} exceeded",
+        threshold=80,
+        current_value=95,
+        operation="test_logging",
+        alert_type="warning"
+    )
+    
+    return {
+        "message": "Sentry test logs sent",
+        "logs_sent": 3,
+        "levels": ["debug", "info", "warning"],
+        "provider": observability_provider.name,
+        "provider_enabled": observability_provider.is_enabled,
+        "note": "Check Sentry Logs UI to see structured logs with searchable fields"
     }
 
 

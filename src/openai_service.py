@@ -14,6 +14,10 @@ from ddtrace import tracer
 from openai import OpenAI
 from .services.youtube_service import get_video_id, get_youtube_transcript, generate_video_summary, process_youtube_video
 from .services.youtube_batch_service import YouTubeBatchProcessor, ProcessingStrategy, BatchProcessingResult
+from .observability.sentry_logging import (
+    log_youtube_processing_start, log_youtube_processing_complete,
+    log_youtube_batch_processing
+)
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -156,6 +160,15 @@ async def summarize_youtube_video(request: YouTubeRequest):
         # Add notion error if it exists but the request was successful overall
         if "notion_error" in result:
             response_dict["notion_error"] = result["notion_error"]
+        
+        # Log successful YouTube processing to Sentry
+        log_youtube_processing_complete(
+            url=request.url,
+            video_id=result["video_id"],
+            title=result.get("title", "Unknown"),
+            duration=0,  # We don't track duration in individual processing
+            save_notion=request.save_to_notion
+        )
             
         return response_dict
     except HTTPException:
@@ -249,6 +262,15 @@ async def batch_summarize_youtube_videos(request: BatchYouTubeRequest):
         # Add errors if any
         if batch_result.errors:
             response_data["errors"] = batch_result.errors
+        
+        # Log batch processing results to Sentry
+        log_youtube_batch_processing(
+            urls_count=batch_result.total_videos,
+            strategy=batch_result.strategy_used.value,
+            successful=batch_result.successful_videos,
+            failed=batch_result.failed_videos,
+            total_duration=batch_result.total_processing_time
+        )
         
         return response_data
         
