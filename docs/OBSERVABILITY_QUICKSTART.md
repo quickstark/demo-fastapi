@@ -118,6 +118,8 @@ docker run -d --name images-api \
 | `SENTRY_ENVIRONMENT` | No | `production` |
 | `SENTRY_TRACES_SAMPLE_RATE` | No | `1.0` (100%) |
 | `SENTRY_ENABLE_LOGS` | No | `true` |
+| `SENTRY_LOG_BREADCRUMB_LEVEL` | No | `INFO` |
+| `SENTRY_LOG_EVENT_LEVEL` | No | `ERROR` |
 
 ---
 

@@ -68,6 +68,11 @@ class SentryProvider(ObservabilityProvider):
             from sentry_sdk.integrations.fastapi import FastApiIntegration
             from sentry_sdk.integrations.starlette import StarletteIntegration
             from sentry_sdk.integrations.httpx import HttpxIntegration
+            from sentry_sdk.integrations.logging import LoggingIntegration
+            try:
+                from sentry_sdk.integrations.profiling import ProfilingIntegration
+            except Exception:
+                ProfilingIntegration = None
 
             # Get configuration from environment
             dsn = os.getenv('SENTRY_DSN')
@@ -78,9 +83,31 @@ class SentryProvider(ObservabilityProvider):
             send_default_pii = os.getenv('SENTRY_SEND_DEFAULT_PII', 'false').lower() == 'true'
             debug = os.getenv('SENTRY_DEBUG', 'false').lower() == 'true'
             enable_logs = os.getenv('SENTRY_ENABLE_LOGS', 'true').lower() == 'true'
+            log_breadcrumb_level = os.getenv('SENTRY_LOG_BREADCRUMB_LEVEL', 'info')
+            log_event_level = os.getenv('SENTRY_LOG_EVENT_LEVEL', 'error')
 
             # Initialize Sentry SDK
             logger.info("Initializing Sentry SDK...")
+
+            integrations = [
+                FastApiIntegration(transaction_style="endpoint"),
+                StarletteIntegration(transaction_style="endpoint"),
+                HttpxIntegration(),
+            ]
+
+            if profiles_sample_rate > 0:
+                if 'ProfilingIntegration' in locals() and ProfilingIntegration is not None:
+                    integrations.append(ProfilingIntegration())
+                    logger.info("Sentry profiling integration enabled")
+                else:
+                    logger.warning("ProfilingIntegration not available; profiling will be disabled")
+
+            if enable_logs:
+                logging_integration = LoggingIntegration(
+                    level=self._resolve_log_level(log_breadcrumb_level, logging.INFO),
+                    event_level=self._resolve_log_level(log_event_level, logging.ERROR)
+                )
+                integrations.append(logging_integration)
 
             init_kwargs = dict(
                 dsn=dsn,
@@ -90,11 +117,7 @@ class SentryProvider(ObservabilityProvider):
                 profiles_sample_rate=profiles_sample_rate,
                 send_default_pii=send_default_pii,
                 debug=debug,
-                integrations=[
-                    FastApiIntegration(transaction_style="endpoint"),
-                    StarletteIntegration(transaction_style="endpoint"),
-                    HttpxIntegration(),
-                ],
+                integrations=integrations,
                 attach_stacktrace=os.getenv('SENTRY_ATTACH_STACKTRACE', 'true').lower() == 'true',
                 max_breadcrumbs=50,
                 before_send=self._before_send_hook,
@@ -377,3 +400,11 @@ class SentryProvider(ObservabilityProvider):
     def is_enabled(self) -> bool:
         """Check if Sentry is enabled and initialized."""
         return self._enabled and self._initialized
+
+    @staticmethod
+    def _resolve_log_level(value: str, default: int) -> int:
+        """Convert string log level to logging module constant."""
+        if not value:
+            return default
+        level_name = value.strip().upper()
+        return getattr(logging, level_name, default)

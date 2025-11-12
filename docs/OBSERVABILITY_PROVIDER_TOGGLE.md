@@ -50,6 +50,8 @@ All existing Datadog environment variables remain unchanged:
 | `SENTRY_SEND_DEFAULT_PII` | No | `false` | Include PII in events |
 | `SENTRY_DEBUG` | No | `false` | SDK debug logging |
 | `SENTRY_ENABLE_LOGS` | No | `true` | Capture Python logs in Sentry |
+| `SENTRY_LOG_BREADCRUMB_LEVEL` | No | `INFO` | Minimum log level stored as breadcrumbs |
+| `SENTRY_LOG_EVENT_LEVEL` | No | `ERROR` | Minimum log level sent as Sentry events |
 | `SENTRY_ATTACH_STACKTRACE` | No | `true` | Stack traces on all messages |
 
 ## Usage Examples
