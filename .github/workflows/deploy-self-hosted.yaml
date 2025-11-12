@@ -432,8 +432,6 @@ jobs:
             -p 9000:8080 \
             --add-host=host.docker.internal:host-gateway \
             -e OBSERVABILITY_PROVIDER="${{ secrets.OBSERVABILITY_PROVIDER || 'datadog' }}" \
-            -e DATADOG_ENABLED="${{ secrets.DATADOG_ENABLED || 'true' }}" \
-            -e SENTRY_ENABLED="${{ secrets.SENTRY_ENABLED || 'false' }}" \
             -e DD_SERVICE="${{ secrets.DD_SERVICE }}" \
             -e DD_ENV="${{ secrets.DD_ENV }}" \
             -e DD_VERSION="${{ steps.version.outputs.version }}" \
