@@ -117,6 +117,7 @@ docker run -d --name images-api \
 | `SENTRY_DSN` | **Yes** | `https://[key]@sentry.io/[id]` |
 | `SENTRY_ENVIRONMENT` | No | `production` |
 | `SENTRY_TRACES_SAMPLE_RATE` | No | `1.0` (100%) |
+| `SENTRY_ENABLE_LOGS` | No | `true` |
 
 ---
 

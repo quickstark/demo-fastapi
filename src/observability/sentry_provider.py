@@ -77,10 +77,12 @@ class SentryProvider(ObservabilityProvider):
             profiles_sample_rate = float(os.getenv('SENTRY_PROFILES_SAMPLE_RATE', '0.0'))
             send_default_pii = os.getenv('SENTRY_SEND_DEFAULT_PII', 'false').lower() == 'true'
             debug = os.getenv('SENTRY_DEBUG', 'false').lower() == 'true'
+            enable_logs = os.getenv('SENTRY_ENABLE_LOGS', 'true').lower() == 'true'
 
             # Initialize Sentry SDK
             logger.info("Initializing Sentry SDK...")
-            sentry_sdk.init(
+
+            init_kwargs = dict(
                 dsn=dsn,
                 environment=environment,
                 release=release,
@@ -93,11 +95,23 @@ class SentryProvider(ObservabilityProvider):
                     StarletteIntegration(transaction_style="endpoint"),
                     HttpxIntegration(),
                 ],
-                # Additional configuration
                 attach_stacktrace=os.getenv('SENTRY_ATTACH_STACKTRACE', 'true').lower() == 'true',
                 max_breadcrumbs=50,
                 before_send=self._before_send_hook,
             )
+
+            if enable_logs:
+                init_kwargs["enable_logs"] = True
+
+            try:
+                sentry_sdk.init(**init_kwargs)
+            except TypeError as type_error:
+                if "enable_logs" in str(type_error):
+                    logger.warning("Current sentry-sdk version does not support enable_logs; retrying without it")
+                    init_kwargs.pop("enable_logs", None)
+                    sentry_sdk.init(**init_kwargs)
+                else:
+                    raise
 
             logger.info(f"Sentry initialized - env: {environment}, release: {release}")
             logger.info(f"Sentry traces sample rate: {traces_sample_rate * 100}%")

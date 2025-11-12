@@ -49,6 +49,7 @@ All existing Datadog environment variables remain unchanged:
 | `SENTRY_PROFILES_SAMPLE_RATE` | No | `0.0` | Profiling sampling (0.0-1.0) |
 | `SENTRY_SEND_DEFAULT_PII` | No | `false` | Include PII in events |
 | `SENTRY_DEBUG` | No | `false` | SDK debug logging |
+| `SENTRY_ENABLE_LOGS` | No | `true` | Capture Python logs in Sentry |
 | `SENTRY_ATTACH_STACKTRACE` | No | `true` | Stack traces on all messages |
 
 ## Usage Examples
