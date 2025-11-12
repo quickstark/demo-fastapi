@@ -81,6 +81,7 @@ class SentryProvider(ObservabilityProvider):
             enable_logs = os.getenv('SENTRY_ENABLE_LOGS', 'true').lower() == 'true'
             log_breadcrumb_level = os.getenv('SENTRY_LOG_BREADCRUMB_LEVEL', 'info')
             log_event_level = os.getenv('SENTRY_LOG_EVENT_LEVEL', 'error')
+            profile_lifecycle = os.getenv('SENTRY_PROFILE_LIFECYCLE', 'trace')
 
             # Initialize Sentry SDK
             logger.info("Initializing Sentry SDK...")
@@ -107,6 +108,7 @@ class SentryProvider(ObservabilityProvider):
                 release=release,
                 traces_sample_rate=traces_sample_rate,
                 profiles_sample_rate=profiles_sample_rate,
+                profile_lifecycle=profile_lifecycle,
                 send_default_pii=send_default_pii,
                 debug=debug,
                 integrations=integrations,
