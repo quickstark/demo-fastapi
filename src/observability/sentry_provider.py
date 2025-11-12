@@ -122,28 +122,71 @@ class SentryProvider(ObservabilityProvider):
                 logger.info(f"Sentry Spotlight enabled: {spotlight_url}")
 
             # Try to enable log capture (requires sentry-sdk >= 2.8.0)
+            # Only add enable_logs if logs are enabled
+            sdk_initialized = False
             if enable_logs:
                 try:
-                    # First try with enable_logs parameter
+                    # First try with enable_logs parameter (SDK 2.8.0+)
                     test_kwargs = init_kwargs.copy()
                     test_kwargs["enable_logs"] = True
                     sentry_sdk.init(**test_kwargs)
-                    logger.info("Sentry log capture enabled via enable_logs parameter")
+                    sdk_initialized = True
+                    logger.info("✅ Sentry log capture enabled via enable_logs parameter")
                 except TypeError as type_error:
                     if "enable_logs" in str(type_error):
                         # Fallback: SDK version doesn't support enable_logs parameter
-                        # LoggingIntegration is already in integrations, which handles logs
-                        logger.warning("enable_logs parameter not supported; using LoggingIntegration only")
-                        sentry_sdk.init(**init_kwargs)
+                        # LoggingIntegration is already in integrations list above
+                        logger.warning("⚠️ enable_logs parameter not supported; using LoggingIntegration only")
+                        # Don't initialize here, do it below
                     else:
+                        # Re-raise other TypeErrors
                         raise
-            else:
+            
+            # Initialize if not already done
+            if not sdk_initialized:
                 sentry_sdk.init(**init_kwargs)
+                if enable_logs:
+                    logger.info("✅ Sentry initialized with LoggingIntegration")
 
-            logger.info(f"Sentry initialized - env: {environment}, release: {release}")
-            logger.info(f"Sentry traces sample rate: {traces_sample_rate * 100}%")
-            if profiles_sample_rate > 0:
-                logger.info(f"Sentry profiling enabled: {profiles_sample_rate * 100}%")
+            # Log configuration summary
+            logger.info("=" * 60)
+            logger.info("SENTRY CONFIGURATION")
+            logger.info("=" * 60)
+            logger.info(f"Environment: {environment}")
+            logger.info(f"Release: {release}")
+            logger.info(f"DSN configured: {'Yes' if dsn else 'No'}")
+            logger.info(f"Traces sample rate: {traces_sample_rate * 100}%")
+            logger.info(f"Profiles sample rate: {profiles_sample_rate * 100}%")
+            logger.info(f"Logs enabled: {enable_logs}")
+            if enable_logs:
+                logger.info(f"  - Breadcrumb level: {log_breadcrumb_level.upper()}")
+                logger.info(f"  - Event level: {log_event_level.upper()}")
+            logger.info(f"Debug mode: {debug}")
+            logger.info(f"Integrations: {', '.join([i.__class__.__name__ for i in integrations])}")
+            logger.info("=" * 60)
+            
+            # Verify SDK is actually initialized
+            from sentry_sdk import Hub
+            hub = Hub.current
+            if hub.client:
+                logger.info("✅ Sentry SDK client active and ready")
+                
+                # Check profiler status
+                if profiles_sample_rate > 0:
+                    logger.info(f"✅ Profiling configured: {profiles_sample_rate * 100}%")
+                    logger.info("   Note: Profiles appear in Sentry after 1-2 minutes of active requests")
+                else:
+                    logger.warning("⚠️ Profiling disabled (sample rate is 0.0)")
+                    
+                # Log integration status
+                if enable_logs:
+                    logger.info("✅ Log capture active")
+                    logger.info(f"   - Python logs at {log_event_level.upper()}+ will be sent to Sentry")
+                    logger.info(f"   - Breadcrumbs at {log_breadcrumb_level.upper()}+ will be attached to events")
+            else:
+                logger.error("❌ Sentry SDK initialized but client is None!")
+                self._enabled = False
+                return
 
             self._initialized = True
 
