@@ -677,6 +677,89 @@ async def test_sentry_logs():
     }
 
 
+@app.get("/sentry-diagnostics")
+async def sentry_diagnostics():
+    """
+    Diagnostic endpoint to check Sentry configuration in the running container.
+    
+    This helps debug why profiles and logs might not be working.
+    """
+    import sys
+    import sentry_sdk
+    from sentry_sdk.integrations import _AUTO_ENABLING_INTEGRATIONS
+    
+    diagnostics = {
+        "python_version": sys.version,
+        "sentry_sdk_version": sentry_sdk.VERSION,
+        "observability_provider": observability_provider.name,
+        "observability_enabled": observability_provider.is_enabled,
+        "environment_variables": {
+            "OBSERVABILITY_PROVIDER": os.getenv('OBSERVABILITY_PROVIDER', 'NOT SET'),
+            "SENTRY_DSN": "***" + os.getenv('SENTRY_DSN', 'NOT SET')[-20:] if os.getenv('SENTRY_DSN') else "NOT SET",
+            "SENTRY_ENVIRONMENT": os.getenv('SENTRY_ENVIRONMENT', 'NOT SET'),
+            "SENTRY_TRACES_SAMPLE_RATE": os.getenv('SENTRY_TRACES_SAMPLE_RATE', 'NOT SET'),
+            "SENTRY_PROFILES_SAMPLE_RATE": os.getenv('SENTRY_PROFILES_SAMPLE_RATE', 'NOT SET'),
+            "SENTRY_ENABLE_LOGS": os.getenv('SENTRY_ENABLE_LOGS', 'NOT SET'),
+            "SENTRY_LOG_BREADCRUMB_LEVEL": os.getenv('SENTRY_LOG_BREADCRUMB_LEVEL', 'NOT SET'),
+            "SENTRY_LOG_EVENT_LEVEL": os.getenv('SENTRY_LOG_EVENT_LEVEL', 'NOT SET'),
+        }
+    }
+    
+    # Get Sentry Hub options
+    hub = sentry_sdk.Hub.current
+    client = hub.client
+    
+    if client:
+        options = client.options
+        diagnostics["sentry_options"] = {
+            "dsn": "***CONFIGURED***" if options.get("dsn") else "NOT SET",
+            "environment": options.get("environment", "NOT SET"),
+            "traces_sample_rate": options.get("traces_sample_rate", "NOT SET"),
+            "profiles_sample_rate": options.get("profiles_sample_rate", "NOT SET"),
+            "enable_tracing": options.get("enable_tracing", "NOT SET"),
+            "max_breadcrumbs": options.get("max_breadcrumbs", "NOT SET"),
+            "debug": options.get("debug", False),
+            "integrations": [type(i).__name__ for i in options.get("integrations", [])],
+        }
+        
+        # Check if profiling is actually available
+        try:
+            from sentry_sdk.profiler import GeventScheduler
+            diagnostics["profiling_support"] = "GeventScheduler available"
+        except ImportError:
+            diagnostics["profiling_support"] = "GeventScheduler NOT available (profiling may not work)"
+    else:
+        diagnostics["sentry_client"] = "NOT INITIALIZED"
+    
+    # Test structured logging availability
+    try:
+        from src.observability.sentry_logging import get_sentry_logger
+        sentry_logger = get_sentry_logger()
+        diagnostics["structured_logging"] = "Available" if sentry_logger else "Not available (wrong provider or disabled)"
+    except Exception as e:
+        diagnostics["structured_logging"] = f"Error: {str(e)}"
+    
+    # Add recommendations
+    diagnostics["recommendations"] = []
+    
+    if diagnostics["environment_variables"]["SENTRY_PROFILES_SAMPLE_RATE"] in ["0.0", "NOT SET"]:
+        diagnostics["recommendations"].append("⚠️ SENTRY_PROFILES_SAMPLE_RATE is 0.0 or not set - profiling is disabled!")
+    
+    if diagnostics["environment_variables"]["SENTRY_ENABLE_LOGS"] in ["false", "False", "NOT SET"]:
+        diagnostics["recommendations"].append("⚠️ SENTRY_ENABLE_LOGS is false or not set - logs may not be captured!")
+    
+    if diagnostics["environment_variables"]["OBSERVABILITY_PROVIDER"] != "sentry":
+        diagnostics["recommendations"].append(f"⚠️ OBSERVABILITY_PROVIDER is '{diagnostics['environment_variables']['OBSERVABILITY_PROVIDER']}', not 'sentry'")
+    
+    if diagnostics.get("sentry_client") == "NOT INITIALIZED":
+        diagnostics["recommendations"].append("❌ Sentry client is not initialized!")
+    
+    if not diagnostics["recommendations"]:
+        diagnostics["recommendations"].append("✅ Configuration looks good! If profiles/logs still don't work, check Sentry UI filters and rate limits.")
+    
+    return diagnostics
+
+
 @app.get("/test-sqlserver")
 async def test_sqlserver_debug():
     """
