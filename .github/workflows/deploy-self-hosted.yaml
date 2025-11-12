@@ -446,6 +446,7 @@ jobs:
             -e SENTRY_RELEASE="${{ steps.version.outputs.version }}" \
             -e SENTRY_TRACES_SAMPLE_RATE="${{ secrets.SENTRY_TRACES_SAMPLE_RATE || '1.0' }}" \
             -e SENTRY_PROFILES_SAMPLE_RATE="${{ secrets.SENTRY_PROFILES_SAMPLE_RATE || '0.0' }}" \
+            -e SENTRY_ENABLE_LOGS="${{ secrets.SENTRY_ENABLE_LOGS || 'true' }}" \
             -e PGHOST="${{ secrets.PGHOST }}" \
             -e PGPORT="${{ secrets.PGPORT }}" \
             -e PGDATABASE="${{ secrets.PGDATABASE }}" \
