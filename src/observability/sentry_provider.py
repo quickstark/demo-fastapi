@@ -81,7 +81,6 @@ class SentryProvider(ObservabilityProvider):
             enable_logs = os.getenv('SENTRY_ENABLE_LOGS', 'true').lower() == 'true'
             log_breadcrumb_level = os.getenv('SENTRY_LOG_BREADCRUMB_LEVEL', 'info')
             log_event_level = os.getenv('SENTRY_LOG_EVENT_LEVEL', 'error')
-            profile_lifecycle = os.getenv('SENTRY_PROFILE_LIFECYCLE', 'trace')
 
             # Initialize Sentry SDK
             logger.info("Initializing Sentry SDK...")
@@ -108,7 +107,6 @@ class SentryProvider(ObservabilityProvider):
                 release=release,
                 traces_sample_rate=traces_sample_rate,
                 profiles_sample_rate=profiles_sample_rate,
-                profile_lifecycle=profile_lifecycle,
                 send_default_pii=send_default_pii,
                 debug=debug,
                 integrations=integrations,
@@ -117,18 +115,30 @@ class SentryProvider(ObservabilityProvider):
                 before_send=self._before_send_hook,
             )
 
-            if enable_logs:
-                init_kwargs["enable_logs"] = True
+            # Add spotlight support for local debugging (Sentry 2.0+)
+            if debug:
+                spotlight_url = os.getenv('SENTRY_SPOTLIGHT', 'http://localhost:8969/stream')
+                init_kwargs["spotlight"] = spotlight_url
+                logger.info(f"Sentry Spotlight enabled: {spotlight_url}")
 
-            try:
+            # Try to enable log capture (requires sentry-sdk >= 2.8.0)
+            if enable_logs:
+                try:
+                    # First try with enable_logs parameter
+                    test_kwargs = init_kwargs.copy()
+                    test_kwargs["enable_logs"] = True
+                    sentry_sdk.init(**test_kwargs)
+                    logger.info("Sentry log capture enabled via enable_logs parameter")
+                except TypeError as type_error:
+                    if "enable_logs" in str(type_error):
+                        # Fallback: SDK version doesn't support enable_logs parameter
+                        # LoggingIntegration is already in integrations, which handles logs
+                        logger.warning("enable_logs parameter not supported; using LoggingIntegration only")
+                        sentry_sdk.init(**init_kwargs)
+                    else:
+                        raise
+            else:
                 sentry_sdk.init(**init_kwargs)
-            except TypeError as type_error:
-                if "enable_logs" in str(type_error):
-                    logger.warning("Current sentry-sdk version does not support enable_logs; retrying without it")
-                    init_kwargs.pop("enable_logs", None)
-                    sentry_sdk.init(**init_kwargs)
-                else:
-                    raise
 
             logger.info(f"Sentry initialized - env: {environment}, release: {release}")
             logger.info(f"Sentry traces sample rate: {traces_sample_rate * 100}%")
