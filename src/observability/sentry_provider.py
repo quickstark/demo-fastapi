@@ -69,10 +69,6 @@ class SentryProvider(ObservabilityProvider):
             from sentry_sdk.integrations.starlette import StarletteIntegration
             from sentry_sdk.integrations.httpx import HttpxIntegration
             from sentry_sdk.integrations.logging import LoggingIntegration
-            try:
-                from sentry_sdk.integrations.profiling import ProfilingIntegration
-            except Exception:
-                ProfilingIntegration = None
 
             # Get configuration from environment
             dsn = os.getenv('SENTRY_DSN')
@@ -95,12 +91,8 @@ class SentryProvider(ObservabilityProvider):
                 HttpxIntegration(),
             ]
 
-            if profiles_sample_rate > 0:
-                if 'ProfilingIntegration' in locals() and ProfilingIntegration is not None:
-                    integrations.append(ProfilingIntegration())
-                    logger.info("Sentry profiling integration enabled")
-                else:
-                    logger.warning("ProfilingIntegration not available; profiling will be disabled")
+            # Note: Profiling is automatically enabled when profiles_sample_rate > 0
+            # No separate ProfilingIntegration needed in sentry-sdk 2.0+
 
             if enable_logs:
                 logging_integration = LoggingIntegration(
